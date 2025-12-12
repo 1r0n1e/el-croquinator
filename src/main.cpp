@@ -31,7 +31,7 @@ unsigned long lastFeedtimecroquinettes = 0;                  // Dernier temps (e
 unsigned long maintenantSec = 0;
 
 // Bouton poussoir
-const int BOUTON = D8;    // Pin du bouton poussoir
+const int BOUTON = D4;    // Pin du bouton poussoir
 const int BoutonSec = 50; // Durée (ms) pour considérer une pression comme valide
 int etatBouton;           // État actuel du bouton
 
@@ -40,17 +40,18 @@ const int led = 13; // Pin de la LED
 int etatled = LOW;  // État actuel de la LED
 
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /
-void setupSPIFFS();                                                         // (setup) Connecte la mémoire persistante
-void setupWiFi();                                                           // (setup) Connecte le wifi
-void getSavedSettings();                                                    // (setup) Récupère la data de la mémoire persistante
-void setupScreen();                                                         // (setup) Connecte l'écran OLED
-void printMessage(char *title, char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
-void printImage(unsigned int displayTimeSec);                               // Affichage d'une image au centre de l'écran
-void openValve(unsigned int timeOpen);                                      // Donne la nourriture
-void getRtcTime();
-unsigned long getRtcSecondsFromMidnight(); // Imprime le temps RTC dans la console
-char *getWiFiTime();                       // Récupère la date depuis le wifi
-int calculateDistance();                   // Mesure la distance du capteur
+void setupSPIFFS();                                                            // (setup) Connecte la mémoire persistante
+void setupWiFi();                                                              // (setup) Connecte le wifi
+void getSavedSettings();                                                       // (setup) Récupère la data de la mémoire persistante
+void setupScreen();                                                            // (setup) Connecte l'écran OLED
+void printMessage(char *title, char *message, unsigned int displayTimeSec);    // Affiche un message sur l'écran OLED
+void printImage(unsigned int displayTimeSec);                                  // Affichage d'une image au centre de l'écran
+void displayScreen(unsigned int displayTimeSec);                               // Affiche l'écran de bord
+void openValve(unsigned int timeOpen);                                         // Donne la nourriture
+void getRtcTime();                                                             // Imprime le temps RTC dans la console
+unsigned long getRtcSecondsFromMidnight();                                     // Retourne le nombre de secondes depuis minuit
+void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer); // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
+char *getWiFiTime();                                                           // Récupère la date depuis le wifi
 void feedCat(int timeOpen);
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
@@ -104,8 +105,6 @@ void setup()
 // -------------------                BOUCLE LOOP (début)                ------------------- /
 void loop()
 {
-  Serial.println("Début de la Boucle principale");
-
   // fonction principale
   // Vérifier l'heure
   maintenantSec = getRtcSecondsFromMidnight();
@@ -146,9 +145,9 @@ void loop()
     unsigned long deltaSecondes = maintenantSec - lastFeedtimecroquinettes; // interval de temps entre maintenant et la derniere gourmandise
     const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
     sprintf(message, "Dernières Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
-
-    delay(1000);
+    printMessage("Bouton", message, 1);
   }
+  delay(1000);
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
@@ -241,6 +240,81 @@ void printImage(unsigned int displayTimeSec)
 
   delay(displayTimeSec * 1000);
   oled.clearDisplay();
+}
+
+void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer)
+{
+  // --- CONVERSION DE SEC EN HH:MM ---
+  // On s'assure que la valeur reste dans les limites de 24h (86400 secondes)
+
+  long totalSec = seconds % 86400;
+  if (totalSec < 0)
+    totalSec += 86400; // Gestion si le temps est négatif
+
+  int h = totalSec / 3600;
+  int m = (totalSec % 3600) / 60;
+
+  snprintf(outBuffer, 6, "%02d:%02d", h, m);
+}
+
+void displayScreen(unsigned int displayTimeSec)
+{
+  const byte GRID_LINE_0 = 1;
+  const byte GRID_LINE_1 = 20;
+  const byte GRID_LINE_2 = 35;
+  const byte GRID_LINE_3 = 50;
+
+  const byte GRID_COL_0 = 0;
+  const byte GRID_COL_1 = 80;
+  const byte GRID_COL_2 = 95;
+
+  char timeBuffer[9];  // Espace pour "HH:MM:SS\0"
+  char dateBuffer[11]; // Espace pour "DD/MM/YYYY\0"
+  // Formatage de l'heure et de la date dans les buffers de char
+  snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d",
+           myRTC.hours, myRTC.minutes);
+  snprintf(dateBuffer, sizeof(dateBuffer), "%02d/%02d/%04d",
+           myRTC.dayofmonth, myRTC.month, myRTC.year);
+
+  // Convertir en heure
+  char heureCroquettes[6];
+  char heureCroquinettes[6];
+  char heureProchaineCroquettes[6];
+  const int prochainCroqSec = lastFeedtimeCroquettes + FEED_DELAY_CROQUETTES_SEC;
+  convertSecondsFromMidnightToTime(lastFeedtimeCroquettes, heureCroquettes);
+  convertSecondsFromMidnightToTime(lastFeedtimecroquinettes, heureCroquinettes);
+  convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
+
+  oled.clearDisplay();      // Vidange du buffer de l'écran OLED
+  oled.setTextColor(WHITE); // Couleur "blanche" (ou colorée, si votre afficheur monochrome est bleu, jaune, ou bleu/jaune)
+  oled.setTextSize(1);      // Sélection de l'échelle 1:1
+
+  oled.setCursor(GRID_COL_0, GRID_LINE_0);
+  oled.print(dateBuffer);
+  oled.setCursor(GRID_COL_2, GRID_LINE_0);
+  oled.print(timeBuffer);
+
+  oled.setCursor(GRID_COL_0, GRID_LINE_1);
+  oled.print("Croquettes");
+  oled.setCursor(GRID_COL_1, GRID_LINE_1);
+  oled.print("1");
+  oled.setCursor(GRID_COL_2, GRID_LINE_1);
+  oled.print(heureCroquettes);
+
+  oled.setCursor(GRID_COL_0, GRID_LINE_2);
+  oled.print("Croquinettes");
+  oled.setCursor(GRID_COL_1, GRID_LINE_2);
+  oled.print("2");
+  oled.setCursor(GRID_COL_2, GRID_LINE_2);
+  oled.print(heureCroquinettes);
+
+  oled.setCursor(GRID_COL_0, GRID_LINE_3);
+  oled.print("Prochain croq");
+  oled.setCursor(GRID_COL_2, GRID_LINE_3);
+  oled.print(heureProchaineCroquettes);
+
+  oled.display();
+  delay(displayTimeSec * 1000);
 }
 
 void openValve(unsigned int timeOpen)

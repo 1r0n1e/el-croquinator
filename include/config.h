@@ -24,8 +24,8 @@ const unsigned int croquinettes = 111; // temps (ms) ouverture rapide
 const unsigned int croquettes = 500;   // temps (ms) ouverture longue
 
 // --- RTC (DS1302) ---
-#define DS1302_CLK_PIN D6
-#define DS1302_DAT_PIN D7
+#define DS1302_CLK_PIN D7
+#define DS1302_DAT_PIN D6
 #define DS1302_RST_PIN D5
 
 // --- PARAMETRES TIMER ---
