@@ -8,7 +8,7 @@ const char *ssid = "La Parros";
 const char *password = "LP48.100+";
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 3600;
-const int daylightOffset_sec = 3600;
+const int daylightOffset_sec = 0;
 
 // --- ECRAN OLED ---
 #define SCREEN_WIDTH 128     // Taille de l'écran OLED, en pixel, au niveau de sa largeur
@@ -31,26 +31,39 @@ const unsigned int croquettes = 500;   // temps (ms) ouverture longue
 // Capteur de présence de croquettes
 #define IR_PIN D0 // Pin du capteur ir
 
-// #define LED_PIN D8    // Pin de la LED
+// #define LED_PIN D0 // Pin de la LED
 
 // Bouton
-#define BOUTON_PIN D4             // Pin du bouton poussoir
-boolean etatBouton = HIGH;        // Lecture de l'état du bouton
-const int DEBOUNCE_DELAY_MS = 50; // Durée (ms) pour considérer une pression comme valide
-unsigned long debutappuiBoutonMs = 0;
+#define BOUTON_PIN D4                    // Pin du bouton poussoir
+const int DEBOUNCE_DELAY_MS = 50;        // Durée (ms) pour considérer une pression comme valide
+const int SHORT_PRESS_MAX_MS = 500;      // Un appui court doit être relâché avant 500ms
+const int LONG_PRESS_MIN_MS = 1000;      // Un appui long est maintenu pendant au moins 1000ms
+const int DOUBLE_CLICK_TIMEOUT_MS = 300; // Délai maximum entre deux clics pour être considéré comme un double-clic
+boolean lastButtonState = HIGH;          // État précédent du bouton
+boolean buttonState = HIGH;              // État actuel du bouton (après anti-rebond)
+long lastDebounceTime = 0;               // Dernier moment où l'état a changé
+unsigned long pressStartTime = 0;        // Moment où le bouton a été pressé
+unsigned long releaseTime = 0;           // Moment où le bouton a été relâché
+int clickCount = 0;
+long lastClickTime = 0;
 
 // --- PARAMETRES TIMER ---
-const unsigned long FEED_DELAY_SEC = 30 * 1000;
 const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
 const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
-unsigned long lastFeedtimeCroquettes = 0;                    // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
-unsigned long lastFeedtimecroquinettes = 0;                  // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
+const unsigned long SNOOZE_DELAY = 30 * 60;                  // Délai en cas de présence de croquettes (30 minutes)
+
+unsigned long lastFeedtimeCroquettes = 0;
+;                                           // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
+unsigned long lastFeedtimecroquinettes = 0; // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
 unsigned long maintenantSec = 0;
+unsigned int compteurDeCroquettes = 0;
+unsigned int compteurDeCroquinettes = 0;
+unsigned int compteurAbsenceChat = 0;
 // Définition de la plage horaire
 int HEURE_DEBUT_MIAM = 7;
 int MINUTE_DEBUT_MIAM = 30;
 int HEURE_FIN_MIAM = 23;
 int MINUTE_FIN_MIAM = 15;
-boolean plagehoraire = true; // Activer ou désactiver la plage horaire de nourrissage
+boolean dansLaPlageHoraire = true; // Activer ou désactiver la plage horaire de nourrissage
 
 #endif
