@@ -37,7 +37,7 @@ const unsigned int croquettes = 500;   // temps (ms) ouverture longue
 #define BOUTON_PIN D4                    // Pin du bouton poussoir
 const int DEBOUNCE_DELAY_MS = 50;        // Durée (ms) pour considérer une pression comme valide
 const int SHORT_PRESS_MAX_MS = 500;      // Un appui court doit être relâché avant 500ms
-const int LONG_PRESS_MIN_MS = 1000;      // Un appui long est maintenu pendant au moins 1000ms
+const int LONG_PRESS_MIN_MS = 3000;      // Un appui très long est maintenu pendant au moins 3s
 const int DOUBLE_CLICK_TIMEOUT_MS = 300; // Délai maximum entre deux clics pour être considéré comme un double-clic
 boolean lastButtonState = HIGH;          // État précédent du bouton
 boolean buttonState = HIGH;              // État actuel du bouton (après anti-rebond)
@@ -52,8 +52,7 @@ const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum e
 const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
 const unsigned long SNOOZE_DELAY = 30 * 60;                  // Délai en cas de présence de croquettes (30 minutes)
 
-unsigned long lastFeedtimeCroquettes = 0;
-;                                           // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
+unsigned long lastFeedtimeCroquettes = 0;   // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
 unsigned long lastFeedtimecroquinettes = 0; // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
 unsigned long maintenantSec = 0;
 unsigned int compteurDeCroquettes = 0;

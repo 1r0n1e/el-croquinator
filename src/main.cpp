@@ -21,19 +21,19 @@ Servo monServomoteur;                                                      // Se
 Preferences preferences;                                                   // Persistent memory
 
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /                                                           // (setup) Connecte la mémoire persistante
-void setupWiFi();                                                              // (setup) Connecte le wifi
-void getSavedSettings();                                                       // (setup) Récupère la data de la mémoire persistante
-void setupScreen();                                                            // (setup) Connecte l'écran OLED
-void printMessage(char *title, char *message, unsigned int displayTimeSec);    // Affiche un message sur l'écran OLED
-void printImage(unsigned int displayTimeSec);                                  // Affichage d'une image au centre de l'écran
-void displayScreen(unsigned int displayTimeSec);                               // Affiche l'écran de bord
-void openValve(unsigned int timeOpen);                                         // Donne la nourriture
-void printWiFiTime();                                                          // Imprime la date wifi
-void syncRTCFromWiFi();                                                        // Synchronise la date RTC avec la date WiFi
-void getRtcTime();                                                             // Imprime le temps RTC dans la console
-unsigned long getRtcSecondsFromMidnight();                                     // Retourne le nombre de secondes depuis minuit
-void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer); // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
-void feedCat(boolean grossePortion);                                           // Distribue les (0) Croquinettes || (1) Croquettes
+void setupWiFi();                                                                       // (setup) Connecte le wifi
+void getSavedSettings();                                                                // (setup) Récupère la data de la mémoire persistante
+void setupScreen();                                                                     // (setup) Connecte l'écran OLED
+void printMessage(const char *title, const char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
+void printImage(unsigned int displayTimeSec);                                           // Affichage d'une image au centre de l'écran
+void displayScreen(unsigned int displayTimeSec);                                        // Affiche l'écran de bord
+void openValve(unsigned int timeOpen);                                                  // Donne la nourriture
+void printWiFiTime();                                                                   // Imprime la date wifi
+void syncRTCFromWiFi();                                                                 // Synchronise la date RTC avec la date WiFi
+void getRtcTime();                                                                      // Imprime le temps RTC dans la console
+unsigned long getRtcSecondsFromMidnight();                                              // Retourne le nombre de secondes depuis minuit
+void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer);          // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
+void feedCat(boolean grossePortion);                                                    // Distribue les (0) Croquinettes || (1) Croquettes
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -46,7 +46,6 @@ void setup()
 
   // Initialisation de l'écran OLED
   setupScreen();
-
   // Initialize persistent storage space
   getSavedSettings();
   // Configuration du WiFi
@@ -100,7 +99,7 @@ void loop()
     // char message[56];
     // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedtimeCroquettes, deltaSecondes, delay);
     // Serial.println(message);
-    if (deltaSecondes > 0 && deltaSecondes >= delay) // Si le délai de 2H est écoulé
+    if (deltaSecondes > 0 && (unsigned long)deltaSecondes >= delay) // Si le délai de 2H est écoulé
     {
       feedCat(1); // Donner des croquettes
     }
@@ -147,6 +146,14 @@ void loop()
 
         // Détection de l'appui LONG
         if (pressDuration >= LONG_PRESS_MIN_MS)
+        {
+          // CAS n°0 : Appui TRES LONG
+          Serial.println("--- APPUIS TRES LONG DETECTE ---");
+          Serial.println("Synchronisation de l'horloge RTC avec le WiFi..");
+          printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", 1);
+          syncRTCFromWiFi();
+        }
+        else if (pressDuration >= SHORT_PRESS_MAX_MS)
         {
           // CAS n°1 : Appui LONG
           Serial.println("--- APPUIS LONG DETECTE ---");
@@ -311,23 +318,32 @@ void getSavedSettings()
   compteurDeCroquinettes = preferences.getUInt("compteurCroquinette", 0);
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
-  Serial.println("Données récupérées depuis la mémoire :");
-  char message[50];
-  sprintf(message, "Croquettes   : %02d - lastTime: %lu", compteurDeCroquettes, lastFeedtimeCroquettes);
-  Serial.println(message);
-  sprintf(message, "Croquinettes : %02d - lastTime: %lu", compteurDeCroquinettes, lastFeedtimecroquinettes);
-  Serial.println(message);
+  // Serial.println("Données récupérées depuis la mémoire :");
+  // char message[50];
+  // sprintf(message, "Croquettes   : %02d - lastTime: %lu", compteurDeCroquettes, lastFeedtimeCroquettes);
+  // Serial.println(message);
+  // sprintf(message, "Croquinettes : %02d - lastTime: %lu", compteurDeCroquinettes, lastFeedtimecroquinettes);
+  // Serial.println(message);
 }
 // Initialize WiFi
 void setupWiFi()
 {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi ..");
-  while (WiFi.status() != WL_CONNECTED)
+  if (WiFi.status() != WL_CONNECTED)
   {
-    Serial.print('.');
-    delay(1000);
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi ..");
+    printMessage("WiFi", "Connexion au WiFi...", 1);
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.print('.');
+      delay(1000);
+    }
+  }
+  else
+  {
+    Serial.println("WiFi connected.");
+    printMessage("WiFi", "WiFi connected.", 1);
   }
 }
 
@@ -346,7 +362,7 @@ void setupScreen()
   }
   printImage(1);
 }
-void printMessage(char *title, char *message, unsigned int displayTimeSec)
+void printMessage(const char *title, const char *message, unsigned int displayTimeSec)
 {
   oled.clearDisplay();      // Vidange du buffer de l'écran OLED
   oled.setTextColor(WHITE); // Couleur "blanche" (ou colorée, si votre afficheur monochrome est bleu, jaune, ou bleu/jaune)
@@ -514,8 +530,10 @@ void printWiFiTime()
 // Fonction de synchronisation principale
 void syncRTCFromWiFi()
 {
-  struct tm timeinfo;
+  // 0. Vérifier que le WiFi est connecté
+  setupWiFi();
   // 1. Récupérer l'heure du WiFi
+  struct tm timeinfo;
   if (getLocalTime(&timeinfo))
   {
     Serial.println("Synchronisation du RTC avec l'heure WiFi...");
@@ -542,9 +560,11 @@ void syncRTCFromWiFi()
     );
     myRTC.updateTime();
     Serial.println("Synchronisation RTC réussie.");
+    printMessage("Horloge", "Synchronisation de l'heure reussie", 1);
   }
   else
   {
     Serial.println("Synchronisation RTC échouée car l'heure WiFi n'a pas pu être récupérée.");
+    printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", 5);
   }
 }
