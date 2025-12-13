@@ -23,22 +23,6 @@ virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN);      // RT
 Servo monServomoteur;                                                      // Servomoteur
 Preferences preferences;                                                   // Persistent memory
 
-// Timer variables
-const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
-const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
-unsigned long lastFeedtimeCroquettes = 0;                    // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
-unsigned long lastFeedtimecroquinettes = 0;                  // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
-unsigned long maintenantSec = 0;
-
-// Bouton poussoir
-const int BOUTON = D4;    // Pin du bouton poussoir
-const int BoutonSec = 50; // Durée (ms) pour considérer une pression comme valide
-int etatBouton;           // État actuel du bouton
-
-// Led
-const int led = 13; // Pin de la LED
-int etatled = LOW;  // État actuel de la LED
-
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /
 void setupSPIFFS();                                                            // (setup) Connecte la mémoire persistante
 void setupWiFi();                                                              // (setup) Connecte le wifi
@@ -52,7 +36,7 @@ void getRtcTime();                                                             /
 unsigned long getRtcSecondsFromMidnight();                                     // Retourne le nombre de secondes depuis minuit
 void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer); // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
 char *getWiFiTime();                                                           // Récupère la date depuis le wifi
-void feedCat(int timeOpen);
+void feedCat(boolean grossePortion);                                           // Distribue les (0) Croquinettes || (1) Croquettes
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -63,17 +47,7 @@ void setup()
     ; // wait until Arduino Serial Monitor opens
 
   // Initialisation de l'écran OLED
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADRESS))
-  {
-    Serial.println(F("Erreur de communication avec le chipset SSD1306… arrêt du programme."));
-    while (1)
-      ; // Arrêt du programme (boucle infinie)
-  }
-  else
-  {
-    Serial.println(F("Initialisation du contrôleur SSD1306 réussi."));
-  }
-  printImage(1);
+  setupScreen();
 
   // Initialize persistent storage space
   // preferences.begin("croquinator-settings", false);
@@ -91,11 +65,12 @@ void setup()
   monServomoteur.write(ANGLE_FERMETURE); // S'assure que la valve est fermée au démarrage
 
   // Configuration du bouton poussoir
-  pinMode(BOUTON, INPUT); // le bouton est une entrée
-  etatBouton = HIGH;      // on initialise l'état du bouton comme "relaché"
+  pinMode(BOUTON_PIN, INPUT_PULLUP); // le bouton est une entrée
+  etatBouton = HIGH;                 // on initialise l'état du bouton comme "relaché"
 
   // Configuration de la LED
-  pinMode(led, OUTPUT); // la led est une sortie
+  // pinMode(LED_PIN, OUTPUT);   // la led est une sortie
+  // digitalWrite(LED_PIN, LOW); // Éteint la LED}
 
   // Just to know which program is running
   Serial.println(F("START " __FILE__ " from " __DATE__ "\r\n"));
@@ -105,62 +80,153 @@ void setup()
 // -------------------                BOUCLE LOOP (début)                ------------------- /
 void loop()
 {
-  // fonction principale
-  // Vérifier l'heure
-  maintenantSec = getRtcSecondsFromMidnight();
-  Serial.println(maintenantSec);
-  // Si le chat est affamé : Verifier le délai depuis le dernier
-  unsigned long deltaSecondes = maintenantSec - lastFeedtimeCroquettes; // interval de temps
-  Serial.println(deltaSecondes);
-  if (deltaSecondes >= FEED_DELAY_CROQUETTES_SEC) // Si le délai de 2H est écoulé
+  // Serial.println("Début de la Boucle principale");
+  // getRtcTime();
+
+  myRTC.updateTime();
+  int h = myRTC.hours;
+  int m = myRTC.minutes;
+
+  if ((h > HEURE_DEBUT_MIAM || (h == HEURE_DEBUT_MIAM && m >= MINUTE_DEBUT_MIAM)) &&
+      (h < HEURE_FIN_MIAM || (h == HEURE_FIN_MIAM && m <= MINUTE_FIN_MIAM)))
   {
-    // Vérifier la distance
-    feedCat(croquettes);                    // Nourrir le chat avec une portion complète
-    lastFeedtimeCroquettes = maintenantSec; // Met à jour le dernier temps de nourrissage
-  }
+    // Serial.println("Dans la plage horaire de nourrissage.");
 
-  // Vérifier les boutons
-  etatBouton = digitalRead(BOUTON); // Lecture de l'état du bouton
+    // fonction principale
 
-  if (etatBouton == HIGH) // Si le bouton est appuyé
-  {
-    Serial.println("Le bouton est appuyé");
-    digitalWrite(led, HIGH); // Allume la LED
-
-    unsigned long deltaSecondes = maintenantSec - lastFeedtimecroquinettes; // interval de temps
-
-    if (deltaSecondes >= FEED_DELAY_CROQUINETTES_SEC) // Si le délai de 30 min est écoulé
+    maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
+    // Serial.println(maintenantSec);
+    //  Si le chat est affamé : Verifier le délai depuis le dernier
+    unsigned long deltaSecondes = maintenantSec - lastFeedtimeCroquettes; // interval de temps
+    if (deltaSecondes >= FEED_DELAY_CROQUETTES_SEC)                       // Si le délai de 2H est écoulé
     {
-      feedCat(croquinettes);                    // Nourrir le chat avec quelques croquettes
-      lastFeedtimecroquinettes = maintenantSec; // Met à jour le dernier temps de gourmandise
-      Serial.println("El gazou est servi !");
+      feedCat(1); // Donner des croquettes
     }
-    delay(BoutonSec); // Anti-rebond
-  }
-  else
-  {
-    digitalWrite(led, LOW); // Éteint la LED}
 
-    char message[56];                                                       // Nombre de caractères max pour le message
-    unsigned long deltaSecondes = maintenantSec - lastFeedtimecroquinettes; // interval de temps entre maintenant et la derniere gourmandise
-    const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
-    sprintf(message, "Dernières Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
-    printMessage("Bouton", message, 1);
+    // Vérifier les boutons
+    if (etatBouton == HIGH && digitalRead(BOUTON_PIN) == LOW) // Si on vient d'appuyer sur le bouton
+    {
+      etatBouton = LOW;
+      Serial.println("Le bouton est appuyé");
+      Serial.println("Allumage de la led");
+      // digitalWrite(LED_PIN, HIGH);                                 // Allume la LED
+      debutappuiBoutonMs = millis(); // Enregistre le temps de début de l'appui sur le bouton
+      delay(DEBOUNCE_DELAY_MS);      // Anti-rebond
+    }
+    else if (etatBouton == LOW && digitalRead(BOUTON_PIN) == HIGH)
+    { // On vient d'arreter d'appuyer
+
+      // digitalWrite(LED_PIN, LOW); // Éteint la LED}
+      Serial.println("Extinction de la led");
+      etatBouton = HIGH;
+      const unsigned long duréeappuiBoutonMs = (millis() - debutappuiBoutonMs); // Calcul du temps d'appui sur le bouton en secondes
+
+      if (duréeappuiBoutonMs <= 1000) // Si le bouton est appuyé pendant moins de 1 seconde
+      {
+        Serial.println("appui court détecté");
+        displayScreen(5); // Afficher les dernières croquettes et croquinettes servies
+      }
+      else // Si le bouton est appuyé pendant plus de 1 seconde
+      {
+        Serial.println("appui long détecté");
+        feedCat(0); // Donner des croquinettes
+      }
+    }
   }
+
+  // Délais de fin de boucle
+  displayScreen(5); // Afficher les dernières croquettes et croquinettes servies
   delay(1000);
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
-void feedCat(int timeOpen)
+boolean detecterCroquettes()
+{
+  const boolean presence = digitalRead(IR_PIN);
+  Serial.print("Detection des croquettes... ");
+  if (presence == LOW)
+  {
+    Serial.println("Des croquetttes sont dans la gamelle");
+    return true;
+  }
+  else
+  {
+    Serial.println("Pas de croquetttes dans la gamelle");
+    return false;
+  }
+}
+
+/* Fonction pour nourrir le chat
+Vérifie la présence de croquettes et les distribue
+@args
+grossePortion : true (croquettes) | false (croquinettes)
+*/
+void feedCat(boolean grossePortion)
 {
   Serial.println("Nourrir le chat !");
-  // Bonus: Prévenir le chat avec un son ou une led
+  const boolean presenceDeCroquettes = detecterCroquettes(); // Vérifier si il y a des croquettes
 
-  // Ouvrir la valve pour laisser tomber les croquettes
-  openValve(timeOpen);
-  // Enregistrer l'heure de feed
-  // preferences.putULong("feedtime", value);
-  // Bonus: Afficher un message sur ecran
+  // CAS n°1 - Il y a déja des croquettes
+  if (presenceDeCroquettes == true)
+  {
+    if (grossePortion == true)
+    { // Croquettes
+      Serial.println("Distribution des croquettes reportée");
+      lastFeedtimeCroquettes += 30 * 1000 * 60; // Attendre 1 heure pour vérifier à nouveau si Gazou a mangé avant de lui donner à nouveau
+      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportée..", 2);
+    }
+    else
+    { // Croquinettes
+      Serial.println("Pas de croquinettes pour les chats qui ne mangent pas");
+      printMessage("No way", "Il y a déjà des croquettes dans la gamelles !", 2);
+    }
+  }
+  // Fin du CAS n°1 - Il y a déja des croquettes
+
+  // CAS n°2 - Il n'y a pas de croquettes
+  else
+  {
+    Serial.print("Distribution ");
+    printImage(1); // Afficher l'image du chat
+    // Bonus: Prévenir le chat avec un son ou une led
+
+    // CAS n°1 - Croquettes
+    if (grossePortion == true)
+    {
+      Serial.println(" des croquettes.");
+      openValve(croquettes);                  // Nourrir le chat avec une portion complète
+      lastFeedtimeCroquettes = maintenantSec; // Met à jour le dernier temps de nourrissage
+      // preferences.putULong("lastFeedtimecroquinettes", lastFeedtimecroquinettes); // Sauvegarder le temps de nourrissage dans la mémoire persistante
+      printMessage("Miam", "El Gazou a eu sa dose", 2);
+      Serial.println("El Gazou a eu sa dose");
+    }
+
+    // CAS n°2 - Croquinettes
+    else
+    {
+      Serial.println(" des croquinettes.");
+      // Vérifier que le delay des croquinettes est dépassé
+      unsigned long deltaSecondes = maintenantSec - lastFeedtimecroquinettes; // interval de temps
+      if (deltaSecondes >= FEED_DELAY_CROQUINETTES_SEC)                       // Si le délai de 30 min est écoulé
+      {
+        Serial.println("Délai écoulé, on peut donner une gourmandise/crpquinette");
+        openValve(croquinettes);                  // Nourrir le chat avec quelques croquettes
+        lastFeedtimecroquinettes = maintenantSec; // Met à jour le dernier temps de gourmandise
+        // preferences.putULong("lastFeedtimecroquinettes", lastFeedtimecroquinettes); // Sauvegarder le temps de nourrissage dans la mémoire persistante
+        Serial.println("El gazou est servi !");
+        printMessage("Miaou", "El Gazou est servi !", 2);
+      }
+      else
+      {
+        Serial.println("El gazou a deja eu sa gourmandise.");
+        char message[56];                                                       // Nombre de caractères max pour le message
+        const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
+        sprintf(message, "Dernières Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
+        printMessage("No way", message, 2);
+      }
+    }
+  }
+  // Fin du CAS n°2 - Il n'y a pas de croquettes
 };
 
 // -------------------                FONCTIONS                ------------------- /

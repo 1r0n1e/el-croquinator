@@ -28,7 +28,29 @@ const unsigned int croquettes = 500;   // temps (ms) ouverture longue
 #define DS1302_DAT_PIN D6
 #define DS1302_RST_PIN D5
 
+// Capteur de présence de croquettes
+#define IR_PIN D0 // Pin du capteur ir
+
+// #define LED_PIN D8    // Pin de la LED
+
+// Bouton
+#define BOUTON_PIN D4             // Pin du bouton poussoir
+boolean etatBouton = HIGH;        // Lecture de l'état du bouton
+const int DEBOUNCE_DELAY_MS = 50; // Durée (ms) pour considérer une pression comme valide
+unsigned long debutappuiBoutonMs = 0;
+
 // --- PARAMETRES TIMER ---
 const unsigned long FEED_DELAY_SEC = 30 * 1000;
+const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
+const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
+unsigned long lastFeedtimeCroquettes = 0;                    // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
+unsigned long lastFeedtimecroquinettes = 0;                  // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
+unsigned long maintenantSec = 0;
+// Définition de la plage horaire
+int HEURE_DEBUT_MIAM = 7;
+int MINUTE_DEBUT_MIAM = 30;
+int HEURE_FIN_MIAM = 23;
+int MINUTE_FIN_MIAM = 15;
+boolean plagehoraire = true; // Activer ou désactiver la plage horaire de nourrissage
 
 #endif
