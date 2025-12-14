@@ -23,6 +23,8 @@ Preferences preferences;                                                   // Pe
 void setupWiFi();                                                                       // (setup) Connecte le wifi
 void getSavedSettings();                                                                // (setup) Récupère la data de la mémoire persistante
 void setupScreen();                                                                     // (setup) Connecte l'écran OLED
+void manageDisplay();                                                                   // (loop) gère les temps d'affichage sur l'écran oled
+void clearDisplay();                                                                    // Efface l'écran oled
 void printMessage(const char *title, const char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
 void printImage(unsigned int displayTimeSec);                                           // Affichage d'une image au centre de l'écran
 void displayScreen(unsigned int displayTimeSec);                                        // Affiche l'écran de bord
@@ -41,9 +43,7 @@ void getRtcTime();                                                              
 // -------------------                INITIALISATION (début)                ------------------- /
 void setup()
 {
-  DEBUG_INIT(9600); // Initialisation de la communication filaire
-  while (!Serial)
-    ;                                                           // wait until Arduino Serial Monitor opens
+  DEBUG_INIT(9600);                                             // Initialisation de la communication filaire                                              // wait until Arduino Serial Monitor opens
   DEBUG_PRINTLN(F("START " __FILE__ " from " __DATE__ "\r\n")); //  Just to know which program is running
 
   setupScreen();                                               // Initialisation de l'écran OLED
@@ -63,6 +63,7 @@ void loop()
 {
   // DEBUG_PRINTLN("Début de la Boucle principale");
   // getRtcTime();
+  manageDisplay(); // Loop Ecran OLED
 
   // --------- AutoCatFeed (début) --------- //
   dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs à minuit
@@ -168,8 +169,6 @@ void loop()
   lastButtonState = reading;
   // --------- Inputs bouton (fin) --------- //
 
-  oled.clearDisplay(); // Vidange du buffer de l'écran OLED
-  printMessage("", "", 0);
   delay(1); // Délais de fin de boucle
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
@@ -392,46 +391,59 @@ void setupScreen()
   }
   printImage(1);
 }
+// Fonction d'affichage principal, appeler dans la loop pour gérer les temps de display
+void manageDisplay()
+{
+  unsigned long currentMillis = millis();
+  if (currentMillis - screenTimerStart >= screenDuration)
+  { // Si le délais d'affichage est dépassé
+    clearDisplay();
+  }
+}
+void clearDisplay()
+{
+  oled.clearDisplay(); // Écrit des zéros dans le buffer
+  oled.display();      // Envoie le buffer noir à l'écran
+  // DEBUG_PRINTLN(F("OLED effacé (écran noir)."));
+}
 void printMessage(const char *title, const char *message, unsigned int displayTimeSec)
 {
-  oled.clearDisplay();      // Vidange du buffer de l'écran OLED
-  oled.setTextColor(WHITE); // Couleur "blanche" (ou colorée, si votre afficheur monochrome est bleu, jaune, ou bleu/jaune)
-
-  oled.setCursor(0, 1); // Positionnement du curseur dans l'angle haut-gauche, avec décalage de 1 pixel vers le bas
-  oled.setTextSize(2);  // Sélection de l'échelle 1:1
+  // On configure le timer
+  screenDuration = displayTimeSec * 1000UL; // Conversion en ms
+  screenTimerStart = millis();
+  // On affiche
+  oled.clearDisplay();
+  oled.setTextColor(WHITE);
+  oled.setCursor(0, 1);
+  oled.setTextSize(2);
   oled.println(title);
   oled.println();
-  oled.setTextSize(1); // Sélection de l'échelle 1:1
+  oled.setTextSize(1);
   oled.println(message);
-
   oled.display();
-  delay(displayTimeSec * 1000);
-  oled.clearDisplay();
 }
 // Affichage d'une image au centre de l'écran
 void printImage(unsigned int displayTimeSec)
 {
+  screenDuration = displayTimeSec * 1000UL;
+  screenTimerStart = millis();
+
   oled.clearDisplay();
   oled.drawBitmap(
-      (oled.width() - IMAGE_WIDTH) / 2,   // Position de l'extrême "gauche" de l'image (pour centrage écran, ici)
-      (oled.height() - IMAGE_HEIGHT) / 2, // Position de l'extrême "haute" de l'image (pour centrage écran, ici)
-      IMAGE_CHAT,
-      IMAGE_WIDTH,
-      IMAGE_HEIGHT,
-      WHITE); // "couleur" de l'image
-
+      (oled.width() - IMAGE_WIDTH) / 2,
+      (oled.height() - IMAGE_HEIGHT) / 2,
+      IMAGE_CHAT, IMAGE_WIDTH, IMAGE_HEIGHT, WHITE);
   oled.display();
-
-  delay(displayTimeSec * 1000);
-  oled.clearDisplay();
 }
 void displayScreen(unsigned int displayTimeSec)
 {
+  screenDuration = displayTimeSec * 1000UL;
+  screenTimerStart = millis();
+
   const byte GRID_LINE_0 = 1;
   const byte GRID_LINE_1 = 20;
   const byte GRID_LINE_2 = 35;
   const byte GRID_LINE_3 = 50;
-
   const byte GRID_COL_0 = 0;
   const byte GRID_COL_1 = 75;
   const byte GRID_COL_2 = 95;
@@ -486,7 +498,6 @@ void displayScreen(unsigned int displayTimeSec)
   oled.print(heureProchaineCroquettes);
 
   oled.display();
-  delay(displayTimeSec * 1000);
 }
 // -------------------       FONCTIONS: Ecran OLED (fin)      ------------------- /
 

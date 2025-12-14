@@ -36,12 +36,6 @@ const char *NTP_SERVER = "pool.ntp.org";
 const long GMT_OFFSET_SEC = 3600;
 const int DAYLIGHT_OFFSET_SEC = 0;
 
-// --- ECRAN OLED ---
-#define SCREEN_WIDTH 128     // Taille de l'écran OLED, en pixel, au niveau de sa largeur
-#define SCREEN_HEIGHT 64     // Taille de l'écran OLED, en pixel, au niveau de sa hauteur
-#define OLED_RESET_PIN -1    // Reset de l'OLED partagé avec l'Arduino (d'où la valeur à -1, et non un numéro de pin)
-#define OLED_I2C_ADRESS 0x3C // Adresse de "mon" écran OLED sur le bus i2c (généralement égal à 0x3C ou 0x3D)
-
 // --- SERVOMOTEUR ---
 #define SERVO_PIN D3
 const int ANGLE_OUVERTURE = 180;       // Angle pour ouvrir la valve
@@ -56,6 +50,14 @@ const unsigned int CROQUETTES = 500;   // temps (ms) ouverture longue
 
 // Capteur de présence de croquettes
 #define IR_PIN D0 // Pin du capteur ir
+
+// --- ECRAN OLED ---
+#define SCREEN_WIDTH 128            // Taille de l'écran OLED, en pixel, au niveau de sa largeur
+#define SCREEN_HEIGHT 64            // Taille de l'écran OLED, en pixel, au niveau de sa hauteur
+#define OLED_RESET_PIN -1           // Reset de l'OLED partagé avec l'Arduino (d'où la valeur à -1, et non un numéro de pin)
+#define OLED_I2C_ADRESS 0x3C        // Adresse de "mon" écran OLED sur le bus i2c (généralement égal à 0x3C ou 0x3D)
+unsigned long screenTimerStart = 0; // Quand a commencé l'affichage actuel
+unsigned long screenDuration = 0;   // Combien de temps ça doit durer (ms)
 
 // Bouton
 #define BOUTON_PIN D4                    // Pin du bouton poussoir
