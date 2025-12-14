@@ -29,14 +29,16 @@ void printImage(unsigned int displayTimeSec);                                   
 void displayScreen(unsigned int displayTimeSec);                                        // Affiche l'écran de bord
 void reinitialiserCompteurs();                                                          // Réinitialise les compteurs
 boolean verifierPlageHoraire();                                                         // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire
-boolean detecterCroquettes();                                                           // Détecte la présence de croquette, retourne (0) abscence || (1) présence
-void feedCat(boolean grossePortion);                                                    // Distribue les (0) Croquinettes || (1) Croquettes
-void openValve(unsigned int timeOpen);                                                  // Contrôle le servomoteur
-void syncRTCFromWiFi();                                                                 // Synchronise la date RTC avec la date WiFi
-unsigned long getRtcSecondsFromMidnight();                                              // Retourne le nombre de secondes depuis minuit
-void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer);          // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
-void printWiFiTime();                                                                   // (debug) Imprime la date wifi
-void getRtcTime();                                                                      // (debug) Imprime le temps RTC dans la console
+int calculerMasseEngloutie();
+boolean verifierRegime();
+boolean detecterCroquettes();                                                  // Détecte la présence de croquette, retourne (0) abscence || (1) présence
+void feedCat(boolean grossePortion);                                           // Distribue les (0) Croquinettes || (1) Croquettes
+void openValve(unsigned int timeOpen);                                         // Contrôle le servomoteur
+void syncRTCFromWiFi();                                                        // Synchronise la date RTC avec la date WiFi
+unsigned long getRtcSecondsFromMidnight();                                     // Retourne le nombre de secondes depuis minuit
+void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer); // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
+void printWiFiTime();                                                          // (debug) Imprime la date wifi
+void getRtcTime();                                                             // (debug) Imprime le temps RTC dans la console
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -148,9 +150,9 @@ void loop()
       // CAS n°2 : Double clic
       DEBUG_PRINTLN("--- DOUBLE APPUIS DETECTE ---");
       // Affiche le temps restant avant les prochaines croquettes
-      char message[56];                                                                                            // Nombre de caractères max pour le message
-      const unsigned int deltaMinutes = (lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC - maintenantSec) / 60; // conversion en minutes
-      sprintf(message, "Prochaines croquettes dans %d min", deltaMinutes);                                         // Prépare le message à afficher
+      char message[81]; // Nombre de caractères max pour le message
+      const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
+      sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
       printMessage("Autocroq", message, DISPLAY_TIME_SEC);
     }
     else if (clickCount == 1)
@@ -215,6 +217,26 @@ boolean verifierPlageHoraire()
     return false;
   }
 }
+int calculerMasseEngloutie()
+{
+  return compteurDeCroquettes * RATION_CROQUETTES_G + compteurDeCroquinettes * RATION_CROQUINETTES_G;
+};
+boolean verifierRegime()
+{
+  DEBUG_PRINT("Verification du régime du chat... ");
+  // masseEngloutieParLeChatEnG = calculerMasseEngloutie();
+  DEBUG_PRINT(masseEngloutieParLeChatEnG);
+  if (masseEngloutieParLeChatEnG < RATION_QUOTIDIENNE_G)
+  {
+    DEBUG_PRINTLN("g engloutis. El Gazou respecte son régime.");
+    return true;
+  }
+  else
+  {
+    DEBUG_PRINTLN("g engloutis. El Gazou a suffisamment mangé !");
+    return false;
+  }
+}
 boolean detecterCroquettes()
 {
   const boolean presence = digitalRead(IR_PIN);
@@ -249,6 +271,7 @@ void feedCat(boolean grossePortion)
 {
   DEBUG_PRINTLN("Nourrir le chat !");
   const boolean presenceDeCroquettes = detecterCroquettes(); // Vérifier si il y a des croquettes
+  const boolean leRegimeEstRespecte = verifierRegime();      // Vérifier la quantité engloutée
 
   // CAS n°1 - Il y a déja des croquettes
   if (presenceDeCroquettes == true)
@@ -267,14 +290,21 @@ void feedCat(boolean grossePortion)
   }
   // Fin du CAS n°1 - Il y a déja des croquettes
 
-  // CAS n°2 - Il n'y a pas de croquettes
+  // CAS n°2 - Le régime n'est pas respecté
+  else if (leRegimeEstRespecte == false)
+  {
+    printMessage("No Grazou", "Distribution annulee. Gazou a suffisamment mange aujourd'hui !", DISPLAY_TIME_SEC);
+  }
+  // Fin du CAS n°2 - Le régime n'est pas respecté
+
+  // CAS n°3 - Il n'y a pas de croquettes et le régime est respecté
   else
   {
     DEBUG_PRINT("Distribution ");
     printImage(DISPLAY_TIME_SEC); // Afficher l'image du chat
     // Bonus: Prévenir le chat avec un son ou une led
 
-    // CAS n°1 - Croquettes
+    // CAS n°3a - Croquettes
     if (grossePortion == true)
     {
       DEBUG_PRINTLN(" des croquettes.");
@@ -294,7 +324,7 @@ void feedCat(boolean grossePortion)
       DEBUG_PRINTLN("El Gazou a eu sa dose");
     }
 
-    // CAS n°2 - Croquinettes
+    // CAS n°3b - Croquinettes
     else
     {
       DEBUG_PRINTLN(" des croquinettes.");
@@ -326,7 +356,7 @@ void feedCat(boolean grossePortion)
       }
     }
   }
-  // Fin du CAS n°2 - Il n'y a pas de croquettes
+  // Fin du CAS n°3 - Il n'y a pas de croquettes et le régime est respecté
 };
 // -------------------       FONCTIONS: Nourir le chat (fin)       ------------------- /
 
