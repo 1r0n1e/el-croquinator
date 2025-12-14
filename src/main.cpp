@@ -53,8 +53,7 @@ void setup()
   syncRTCFromWiFi();                                           // Syncrhonisation de l'horloge interne
   monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
-  pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir
-  displayScreen(DISPLAY_TIME_SEC * 2);                         // Afficher les dernières croquettes et croquinettes servies
+  pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir  
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -195,11 +194,12 @@ void reinitialiserCompteurs()
 }
 boolean verifierPlageHoraire()
 {
+  myRTC.updateTime();
   int h = myRTC.hours;
   int m = myRTC.minutes;
   int s = myRTC.seconds;
   // Tout les jours à minuit
-  if (h == 0 && m == 0 && s == 0)
+  if (h == 0 && m == 0 && s == 1)
   {
     reinitialiserCompteurs();
     syncRTCFromWiFi(); // Resynchroniser l'horloge
@@ -455,7 +455,7 @@ void displayScreen(unsigned int displayTimeSec)
   const byte GRID_COL_0 = 0;
   const byte GRID_COL_1 = 75;
   const byte GRID_COL_2 = 95;
-
+  
   char dateBuffer[11]; // Espace pour "DD/MM/YYYY\0"
   // Formatage de l'heure et de la date dans les buffers de char
   sprintf(dateBuffer, "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
@@ -470,6 +470,13 @@ void displayScreen(unsigned int displayTimeSec)
   convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
   convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
+
+  // Serial.print("Maintenant sec : ");
+  // Serial.println(maintenantSec);
+  // Serial.print("Heure actuelle : ");
+  // Serial.println(heureActuelle);
+  // Serial.print("Date : ");
+  // Serial.println(dateBuffer);
 
   // Convertir en string
   char nombreDeCroquettes[3];   // Espace pour "00\0"
@@ -529,9 +536,29 @@ void syncRTCFromWiFi()
         timeinfo.tm_mon + 1,    // mois (0-11) -> on ajoute 1 pour obtenir 1-12
         timeinfo.tm_year + 1900 // année (depuis 1900)
     );
-    myRTC.updateTime();
-    DEBUG_PRINTLN("Synchronisation RTC réussie.");
-    printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
+    getRtcTime();
+    if(myRTC.year == 2000)
+    {
+      DEBUG_PRINTLN("Synchronisation RTC échouée, vérifier la batterie ou le branchement.");
+      printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 9999);
+    }
+    else
+    {
+      DEBUG_PRINT("WiFi: Date / Heure: ");
+      DEBUG_PRINT(timeinfo.tm_mday);
+      DEBUG_PRINT("/");
+      DEBUG_PRINT(timeinfo.tm_mon + 1);
+      DEBUG_PRINT("/");
+      DEBUG_PRINT(timeinfo.tm_year + 1900);
+      DEBUG_PRINT(" ");
+      DEBUG_PRINT(timeinfo.tm_hour);
+      DEBUG_PRINT(":");
+      DEBUG_PRINT(timeinfo.tm_min);
+      DEBUG_PRINT(":");
+      DEBUG_PRINTLN(timeinfo.tm_sec);
+      DEBUG_PRINTLN("Synchronisation RTC réussie.");
+      printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
+    }
   }
   else
   {
@@ -542,7 +569,7 @@ void syncRTCFromWiFi()
 void getRtcTime()
 {
   myRTC.updateTime();
-  DEBUG_PRINT("Date / Heure: ");
+  DEBUG_PRINT("RTC : Date / Heure: ");
   DEBUG_PRINT(myRTC.dayofmonth);
   DEBUG_PRINT("/");
   DEBUG_PRINT(myRTC.month);
