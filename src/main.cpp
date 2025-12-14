@@ -53,7 +53,7 @@ void setup()
   syncRTCFromWiFi();                                           // Syncrhonisation de l'horloge interne
   monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
-  pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir  
+  pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -123,16 +123,12 @@ void loop()
         {
           // CAS n°-1 : Appui TRES TRES LONG
           DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
-          DEBUG_PRINTLN("Reinitialisation des compteurs");
-          printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
           reinitialiserCompteurs();
         }
         else if (pressDuration >= LONG_PRESS_MIN_MS)
         {
           // CAS n°0 : Appui TRES LONG
           DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
-          DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
-          printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
           syncRTCFromWiFi();
         }
         else if (pressDuration >= SHORT_PRESS_MAX_MS)
@@ -191,6 +187,16 @@ void reinitialiserCompteurs()
   compteurAbsenceChat = 0;
   lastFeedTimeCroquettes = ((HEURE_DEBUT_MIAM * 60 + MINUTE_DEBUT_MIAM) * 60) - FEED_DELAY_CROQUETTES_SEC;
   lastFeedTimeCroquinettes = 0;
+
+  preferences.begin("croquinator", true);
+  lastFeedTimeCroquettes = preferences.putULong("croquetteTime", lastFeedTimeCroquettes);
+  lastFeedTimeCroquinettes = preferences.putULong("croquinetteTime", lastFeedTimeCroquinettes);
+  compteurDeCroquettes = preferences.putUInt("compteurCroquette", compteurDeCroquettes);
+  compteurDeCroquinettes = preferences.putUInt("compteurCroquinette", compteurDeCroquinettes);
+  preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
+
+  DEBUG_PRINTLN("Compteurs reinitialises.");
+  printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
 }
 boolean verifierPlageHoraire()
 {
@@ -199,10 +205,10 @@ boolean verifierPlageHoraire()
   int m = myRTC.minutes;
   int s = myRTC.seconds;
   // Tout les jours à minuit
-  if (h == 0 && m == 0 && s == 1)
+  if (h == 0 && m == 0 && s == 0)
   {
-    reinitialiserCompteurs();
     syncRTCFromWiFi(); // Resynchroniser l'horloge
+    reinitialiserCompteurs();
   }
   // Vérifier la plage horaire
   if ((h > HEURE_DEBUT_MIAM || (h == HEURE_DEBUT_MIAM && m >= MINUTE_DEBUT_MIAM)) &&
@@ -455,7 +461,7 @@ void displayScreen(unsigned int displayTimeSec)
   const byte GRID_COL_0 = 0;
   const byte GRID_COL_1 = 75;
   const byte GRID_COL_2 = 95;
-  
+
   char dateBuffer[11]; // Espace pour "DD/MM/YYYY\0"
   // Formatage de l'heure et de la date dans les buffers de char
   sprintf(dateBuffer, "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
@@ -519,11 +525,13 @@ void displayScreen(unsigned int displayTimeSec)
 // -------------------       FONCTIONS: RTC et conversion de temps (début)       ------------------- /
 void syncRTCFromWiFi()
 {
+
+  DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
+  printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
   setupWiFi();        // Vérifier que le WiFi est connecté
   struct tm timeinfo; //  Récupérer l'heure du WiFi
   if (getLocalTime(&timeinfo))
   {
-    DEBUG_PRINTLN("Synchronisation du RTC avec l'heure WiFi...");
     // Transférer les données de la structure tm au RTC
     // La structure tm utilise 1900 comme année de base (tm_year est l'année - 1900).
     // Elle utilise 0-11 pour les mois (tm_mon) et 0-6 pour les jours de la semaine (tm_wday).
@@ -537,10 +545,13 @@ void syncRTCFromWiFi()
         timeinfo.tm_year + 1900 // année (depuis 1900)
     );
     getRtcTime();
-    if(myRTC.year == 2000)
+    if (myRTC.year == 2000)
     {
       DEBUG_PRINTLN("Synchronisation RTC échouée, vérifier la batterie ou le branchement.");
-      printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 9999);
+      printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 15 * 60);
+      // Ressayer toutes les 15min
+      delay(15 * 60 * 1000);
+      syncRTCFromWiFi();
     }
     else
     {
