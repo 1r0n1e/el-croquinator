@@ -3,12 +3,38 @@
 
 #include <Arduino.h>
 
+// --- CONFIGURATION DEBUG ---
+#define DEBUG_ENABLED true // Mettre à false pour désactiver tout le debug
+// Définition des macros
+#if DEBUG_ENABLED
+#define DEBUG_PRINT(x)   \
+    if (Serial)          \
+    {                    \
+        Serial.print(x); \
+    }
+#define DEBUG_PRINTLN(x)   \
+    if (Serial)            \
+    {                      \
+        Serial.println(x); \
+    }
+#define DEBUG_INIT(speed)              \
+    Serial.begin(speed);               \
+    while (!Serial && millis() < 5000) \
+        ; // Wait max 5s
+#else
+// Si DEBUG est désactivé, ces lignes sont effacées du code compilé
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
+#define DEBUG_INIT(speed)
+#endif
+// ---------------------------
+
 // --- WIFI CONFIG ---
-const char *ssid = "La Parros";
-const char *password = "LP48.100+";
-const char *ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = 3600;
-const int daylightOffset_sec = 0;
+const char *SSID = "La Parros";
+const char *PASSWORD = "LP48.100+";
+const char *NTP_SERVER = "pool.ntp.org";
+const long GMT_OFFSET_SEC = 3600;
+const int DAYLIGHT_OFFSET_SEC = 0;
 
 // --- ECRAN OLED ---
 #define SCREEN_WIDTH 128     // Taille de l'écran OLED, en pixel, au niveau de sa largeur
@@ -20,8 +46,8 @@ const int daylightOffset_sec = 0;
 #define SERVO_PIN D3
 const int ANGLE_OUVERTURE = 180;       // Angle pour ouvrir la valve
 const int ANGLE_FERMETURE = 0;         // Angle pour fermer la valve
-const unsigned int croquinettes = 111; // temps (ms) ouverture rapide
-const unsigned int croquettes = 500;   // temps (ms) ouverture longue
+const unsigned int CROQUINETTES = 111; // temps (ms) ouverture rapide
+const unsigned int CROQUETTES = 500;   // temps (ms) ouverture longue
 
 // --- RTC (DS1302) ---
 #define DS1302_CLK_PIN D7
@@ -30,8 +56,6 @@ const unsigned int croquettes = 500;   // temps (ms) ouverture longue
 
 // Capteur de présence de croquettes
 #define IR_PIN D0 // Pin du capteur ir
-
-// #define LED_PIN D0 // Pin de la LED
 
 // Bouton
 #define BOUTON_PIN D4                    // Pin du bouton poussoir
@@ -52,8 +76,8 @@ const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum e
 const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
 const unsigned long SNOOZE_DELAY = 30 * 60;                  // Délai en cas de présence de croquettes (30 minutes)
 
-unsigned long lastFeedtimeCroquettes = 0;   // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
-unsigned long lastFeedtimecroquinettes = 0; // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
+unsigned long lastFeedTimeCroquettes = 0;   // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
+unsigned long lastFeedTimeCroquinettes = 0; // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
 unsigned long maintenantSec = 0;
 unsigned int compteurDeCroquettes = 0;
 unsigned int compteurDeCroquinettes = 0;
