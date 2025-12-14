@@ -24,12 +24,11 @@ void setupWiFi();                                                               
 void getSavedSettings();                                                                // (setup) Récupère la data de la mémoire persistante
 void setupScreen();                                                                     // (setup) Connecte l'écran OLED
 void manageDisplay();                                                                   // (loop) gère les temps d'affichage sur l'écran oled
-void clearDisplay();                                                                    // Efface l'écran oled
 void printMessage(const char *title, const char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
 void printImage(unsigned int displayTimeSec);                                           // Affichage d'une image au centre de l'écran
 void displayScreen(unsigned int displayTimeSec);                                        // Affiche l'écran de bord
 void reinitialiserCompteurs();                                                          // Réinitialise les compteurs
-boolean verifierPlageHoraire();                                                         // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire, reinitialise les compteurs
+boolean verifierPlageHoraire();                                                         // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire
 boolean detecterCroquettes();                                                           // Détecte la présence de croquette, retourne (0) abscence || (1) présence
 void feedCat(boolean grossePortion);                                                    // Distribue les (0) Croquinettes || (1) Croquettes
 void openValve(unsigned int timeOpen);                                                  // Contrôle le servomoteur
@@ -55,6 +54,7 @@ void setup()
   monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
   pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir
+  displayScreen(DISPLAY_TIME_SEC * 2);                         // Afficher les dernières croquettes et croquinettes servies
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -63,21 +63,28 @@ void loop()
 {
   // DEBUG_PRINTLN("Début de la Boucle principale");
   // getRtcTime();
-  manageDisplay(); // Loop Ecran OLED
+
+  myRTC.updateTime(); // Always update time
 
   // --------- AutoCatFeed (début) --------- //
-  dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs à minuit
+  dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs
   if (dansLaPlageHoraire == true)
   {
     maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
     // DEBUG_PRINTLN(maintenantSec);
     //  Si le chat est affamé : Verifier le délai depuis le dernier croq
     long deltaSecondes = maintenantSec - lastFeedTimeCroquettes; // interval de temps
-    const unsigned long delay = FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY;
+    const unsigned long delay = FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY_SEC;
     // char message[56];
     // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedTimeCroquettes, deltaSecondes, delay);
     // DEBUG_PRINTLN(message);
-    if (deltaSecondes > 0 && (unsigned long)deltaSecondes >= delay) // Si le délai de 2H est écoulé
+
+    if (deltaSecondes < 0)
+    { // Si lastFeed > maintenant
+      // On a changé de jour, il faut réinitialiser les compteurs
+      reinitialiserCompteurs();
+    }
+    else if ((unsigned int)deltaSecondes >= delay) // Si le délai de 2H est écoulé
     {
       feedCat(1); // Donner des croquettes
     }
@@ -124,7 +131,7 @@ void loop()
           // CAS n°0 : Appui TRES LONG
           DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
           DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
-          printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", 1);
+          printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
           syncRTCFromWiFi();
         }
         else if (pressDuration >= SHORT_PRESS_MAX_MS)
@@ -155,13 +162,13 @@ void loop()
       char message[56];                                                                                            // Nombre de caractères max pour le message
       const unsigned int deltaMinutes = (lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC - maintenantSec) / 60; // conversion en minutes
       sprintf(message, "Prochaines croquettes dans %d min", deltaMinutes);                                         // Prépare le message à afficher
-      printMessage("Autocroq", message, 4);
+      printMessage("Autocroq", message, DISPLAY_TIME_SEC * 2);
     }
     else if (clickCount == 1)
     {
       // CAS n°3 : Simple clic
       DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
-      displayScreen(5); // Afficher les dernières croquettes et croquinettes servies
+      displayScreen(DISPLAY_TIME_SEC * 2); // Afficher les dernières croquettes et croquinettes servies
     }
     clickCount = 0; // Réinitialisation
   }
@@ -169,29 +176,30 @@ void loop()
   lastButtonState = reading;
   // --------- Inputs bouton (fin) --------- //
 
-  delay(1); // Délais de fin de boucle
+  manageDisplay(); // Loop Ecran OLED
+  delay(1);        // Délais de fin de boucle
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
 // -------------------       FONCTIONS: Nourir le chat (début)       ------------------- /
 void reinitialiserCompteurs()
 {
+  DEBUG_PRINTLN("Réinitialisation des compteurs.");
   compteurDeCroquettes = 0;
   compteurDeCroquinettes = 0;
+  compteurAbsenceChat = 0;
   lastFeedTimeCroquettes = ((HEURE_DEBUT_MIAM * 60 + MINUTE_DEBUT_MIAM) * 60) - FEED_DELAY_CROQUETTES_SEC;
   lastFeedTimeCroquinettes = 0;
 }
 boolean verifierPlageHoraire()
 {
-  myRTC.updateTime();
   int h = myRTC.hours;
   int m = myRTC.minutes;
   int s = myRTC.seconds;
   // Tout les jours à minuit
-  if (h == 0 && m == 0 && s == 1)
+  if (h == 23 && m == 59 && s == 59)
   {
-    syncRTCFromWiFi();        // Resynchroniser l'horloge
-    reinitialiserCompteurs(); // Réinitialisation des compteurs
+    syncRTCFromWiFi(); // Resynchroniser l'horloge
   }
   // Vérifier la plage horaire
   if ((h > HEURE_DEBUT_MIAM || (h == HEURE_DEBUT_MIAM && m >= MINUTE_DEBUT_MIAM)) &&
@@ -248,12 +256,12 @@ void feedCat(boolean grossePortion)
     { // Croquettes
       DEBUG_PRINTLN("Distribution des croquettes reportée");
       compteurAbsenceChat++;
-      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportée de 30min..", 2);
+      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportée de 30min..", DISPLAY_TIME_SEC);
     }
     else
     { // Croquinettes
       DEBUG_PRINTLN("Pas de croquinettes pour les chats qui ne mangent pas");
-      printMessage("No way", "Il y a déjà des croquettes dans la gamelles !", 2);
+      printMessage("No way", "Il y a déjà des croquettes dans la gamelles !", DISPLAY_TIME_SEC);
     }
   }
   // Fin du CAS n°1 - Il y a déja des croquettes
@@ -262,7 +270,7 @@ void feedCat(boolean grossePortion)
   else
   {
     DEBUG_PRINT("Distribution ");
-    printImage(1); // Afficher l'image du chat
+    printImage(DISPLAY_TIME_SEC); // Afficher l'image du chat
     // Bonus: Prévenir le chat avec un son ou une led
 
     // CAS n°1 - Croquettes
@@ -281,7 +289,7 @@ void feedCat(boolean grossePortion)
       preferences.putUInt("compteurCroquette", compteurDeCroquettes);
       preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
-      printMessage("Miam", "El Gazou a eu sa dose", 2);
+      printMessage("Miam", "El Gazou a eu sa dose", DISPLAY_TIME_SEC);
       DEBUG_PRINTLN("El Gazou a eu sa dose");
     }
 
@@ -293,7 +301,7 @@ void feedCat(boolean grossePortion)
       unsigned long deltaSecondes = maintenantSec - lastFeedTimeCroquinettes; // interval de temps
       if (deltaSecondes >= FEED_DELAY_CROQUINETTES_SEC)                       // Si le délai de 30 min est écoulé
       {
-        DEBUG_PRINTLN("Délai écoulé, on peut donner une gourmandise/crpquinette");
+        DEBUG_PRINTLN("Délai écoulé, on peut donner une gourmandise/croquinette");
         openValve(CROQUINETTES);                  // Nourrir le chat avec quelques croquettes
         lastFeedTimeCroquinettes = maintenantSec; // Met à jour le dernier temps de gourmandise
         compteurDeCroquinettes++;                 // Mise à jour du compteur de croquinettes
@@ -305,7 +313,7 @@ void feedCat(boolean grossePortion)
         preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
         DEBUG_PRINTLN("El gazou est servi !");
-        printMessage("Miaou", "El Gazou est servi !", 2);
+        printMessage("Miaou", "El Gazou est servi !", DISPLAY_TIME_SEC);
       }
       else
       {
@@ -313,7 +321,7 @@ void feedCat(boolean grossePortion)
         char message[56];                                                       // Nombre de caractères max pour le message
         const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
         sprintf(message, "Dernières Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
-        printMessage("No way", message, 2);
+        printMessage("No way", message, DISPLAY_TIME_SEC);
       }
     }
   }
@@ -330,6 +338,7 @@ void getSavedSettings()
   compteurDeCroquettes = preferences.getUInt("compteurCroquette", 0);
   compteurDeCroquinettes = preferences.getUInt("compteurCroquinette", 0);
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
+  printMessage("Memory", "Données récupérées depuis la mémoire", DISPLAY_TIME_SEC);
 
   // DEBUG_PRINTLN("Données récupérées depuis la mémoire :");
   // char message[50];
@@ -345,7 +354,7 @@ void setupWiFi()
     WiFi.mode(WIFI_STA);
     WiFi.begin(SSID, PASSWORD);
     DEBUG_PRINT("Connecting to WiFi ..");
-    printMessage("WiFi", "Connexion au WiFi...", 1);
+    printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
     while (WiFi.status() != WL_CONNECTED)
     {
       DEBUG_PRINT('.');
@@ -355,7 +364,7 @@ void setupWiFi()
   else
   {
     DEBUG_PRINTLN("WiFi connected.");
-    printMessage("WiFi", "WiFi connected.", 1);
+    printMessage("WiFi", "WiFi connected.", DISPLAY_TIME_SEC);
   }
 }
 void printWiFiTime() // (debug) Imprimer la date du WiFi
@@ -389,22 +398,18 @@ void setupScreen()
   {
     DEBUG_PRINTLN(F("Initialisation du contrôleur SSD1306 réussi."));
   }
-  printImage(1);
+  printImage(DISPLAY_TIME_SEC);
 }
 // Fonction d'affichage principal, appeler dans la loop pour gérer les temps de display
 void manageDisplay()
 {
   unsigned long currentMillis = millis();
   if (currentMillis - screenTimerStart >= screenDuration)
-  { // Si le délais d'affichage est dépassé
-    clearDisplay();
+  {                      // Si le délais d'affichage est dépassé
+    oled.clearDisplay(); // Écrit des zéros dans le buffer
+    oled.display();      // Envoie le buffer noir à l'écran
+    // DEBUG_PRINTLN(F("OLED effacé (écran noir)."));
   }
-}
-void clearDisplay()
-{
-  oled.clearDisplay(); // Écrit des zéros dans le buffer
-  oled.display();      // Envoie le buffer noir à l'écran
-  // DEBUG_PRINTLN(F("OLED effacé (écran noir)."));
 }
 void printMessage(const char *title, const char *message, unsigned int displayTimeSec)
 {
@@ -453,12 +458,12 @@ void displayScreen(unsigned int displayTimeSec)
   // Formatage de l'heure et de la date dans les buffers de char
   sprintf(timeBuffer, "%02dh%02d", myRTC.hours, myRTC.minutes);
   sprintf(dateBuffer, "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
-
-  // Convertir en heure
+  // snprintf(dateBuffer, sizeof(dateBuffer), "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
+  //  Convertir en heure
   char heureCroquettes[6];
   char heureCroquinettes[6];
   char heureProchaineCroquettes[6];
-  const int prochainCroqSec = lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC;
+  const int prochainCroqSec = lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY_SEC;
   convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
   convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
@@ -523,12 +528,12 @@ void syncRTCFromWiFi()
     );
     myRTC.updateTime();
     DEBUG_PRINTLN("Synchronisation RTC réussie.");
-    printMessage("Horloge", "Synchronisation de l'heure reussie", 1);
+    printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
   }
   else
   {
     DEBUG_PRINTLN("Synchronisation RTC échouée car l'heure WiFi n'a pas pu être récupérée.");
-    printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", 5);
+    printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", DISPLAY_TIME_SEC);
   }
 }
 void getRtcTime()
