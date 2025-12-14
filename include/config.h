@@ -75,9 +75,9 @@ int clickCount = 0;
 long lastClickTime = 0;
 
 // --- PARAMETRES TIMER ---
-const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
-const unsigned long FEED_DELAY_CROQUINETTES_SEC = 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
-const unsigned long SNOOZE_DELAY_SEC = 30 * 60;              // Délai en cas de présence de croquettes (30 minutes)
+const unsigned long FEED_DELAY_CROQUETTES_SEC = 60;   // 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
+const unsigned long FEED_DELAY_CROQUINETTES_SEC = 60; // 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
+const unsigned long SNOOZE_DELAY_SEC = 30;            // 30 * 60;              // Délai en cas de présence de croquettes (30 minutes)
 
 unsigned long lastFeedTimeCroquettes = 0;   // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
 unsigned long lastFeedTimeCroquinettes = 0; // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
