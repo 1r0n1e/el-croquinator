@@ -64,13 +64,13 @@ void loop()
   // DEBUG_PRINTLN("Début de la Boucle principale");
   // getRtcTime();
 
-  myRTC.updateTime(); // Always update time
+  myRTC.updateTime();                          // Always update time
+  maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
 
   // --------- AutoCatFeed (début) --------- //
   dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs
   if (dansLaPlageHoraire == true)
   {
-    maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
     // DEBUG_PRINTLN(maintenantSec);
     //  Si le chat est affamé : Verifier le délai depuis le dernier croq
     long deltaSecondes = maintenantSec - lastFeedTimeCroquettes; // interval de temps
@@ -78,13 +78,7 @@ void loop()
     // char message[56];
     // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedTimeCroquettes, deltaSecondes, delay);
     // DEBUG_PRINTLN(message);
-
-    if (deltaSecondes < 0)
-    { // Si lastFeed > maintenant
-      // On a changé de jour, il faut réinitialiser les compteurs
-      reinitialiserCompteurs();
-    }
-    else if ((unsigned int)deltaSecondes >= delay) // Si le délai de 2H est écoulé
+    if (deltaSecondes > 0 && (unsigned int)deltaSecondes >= delay) // Si le délai de 2H est écoulé
     {
       feedCat(1); // Donner des croquettes
     }
@@ -109,7 +103,7 @@ void loop()
       if (buttonState == LOW)
       { // LOW car on utilise INPUT_PULLUP (le bouton tire la broche à la masse)
         pressStartTime = millis();
-        DEBUG_PRINTLN("Le bouton est appuyé");
+        DEBUG_PRINTLN("Le bouton est appuye");
         //  Réinitialiser le compte de clic si le délai est dépassé
         if (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS)
         {
@@ -126,7 +120,15 @@ void loop()
         DEBUG_PRINTLN("ms)");
 
         // Détection de l'appui LONG
-        if (pressDuration >= LONG_PRESS_MIN_MS)
+        if (pressDuration >= LONG_PRESS_MIN_MS * 2)
+        {
+          // CAS n°-1 : Appui TRES TRES LONG
+          DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
+          DEBUG_PRINTLN("Reinitialisation des compteurs");
+          printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
+          reinitialiserCompteurs();
+        }
+        else if (pressDuration >= LONG_PRESS_MIN_MS)
         {
           // CAS n°0 : Appui TRES LONG
           DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
@@ -162,13 +164,13 @@ void loop()
       char message[56];                                                                                            // Nombre de caractères max pour le message
       const unsigned int deltaMinutes = (lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC - maintenantSec) / 60; // conversion en minutes
       sprintf(message, "Prochaines croquettes dans %d min", deltaMinutes);                                         // Prépare le message à afficher
-      printMessage("Autocroq", message, DISPLAY_TIME_SEC * 2);
+      printMessage("Autocroq", message, DISPLAY_TIME_SEC);
     }
     else if (clickCount == 1)
     {
       // CAS n°3 : Simple clic
       DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
-      displayScreen(DISPLAY_TIME_SEC * 2); // Afficher les dernières croquettes et croquinettes servies
+      displayScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
     }
     clickCount = 0; // Réinitialisation
   }
@@ -184,7 +186,7 @@ void loop()
 // -------------------       FONCTIONS: Nourir le chat (début)       ------------------- /
 void reinitialiserCompteurs()
 {
-  DEBUG_PRINTLN("Réinitialisation des compteurs.");
+  DEBUG_PRINTLN("Reinitialisation des compteurs.");
   compteurDeCroquettes = 0;
   compteurDeCroquinettes = 0;
   compteurAbsenceChat = 0;
@@ -197,8 +199,9 @@ boolean verifierPlageHoraire()
   int m = myRTC.minutes;
   int s = myRTC.seconds;
   // Tout les jours à minuit
-  if (h == 23 && m == 59 && s == 59)
+  if (h == 0 && m == 0 && s == 0)
   {
+    reinitialiserCompteurs();
     syncRTCFromWiFi(); // Resynchroniser l'horloge
   }
   // Vérifier la plage horaire
@@ -254,14 +257,14 @@ void feedCat(boolean grossePortion)
   {
     if (grossePortion == true)
     { // Croquettes
-      DEBUG_PRINTLN("Distribution des croquettes reportée");
+      DEBUG_PRINTLN("Distribution des croquettes reportee");
       compteurAbsenceChat++;
-      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportée de 30min..", DISPLAY_TIME_SEC);
+      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportee de 30min..", DISPLAY_TIME_SEC);
     }
     else
     { // Croquinettes
       DEBUG_PRINTLN("Pas de croquinettes pour les chats qui ne mangent pas");
-      printMessage("No way", "Il y a déjà des croquettes dans la gamelles !", DISPLAY_TIME_SEC);
+      printMessage("No way", "Il y a deja des croquettes dans la gamelles !", DISPLAY_TIME_SEC);
     }
   }
   // Fin du CAS n°1 - Il y a déja des croquettes
@@ -280,7 +283,7 @@ void feedCat(boolean grossePortion)
       openValve(CROQUETTES);                  // Nourrir le chat avec une portion complète
       lastFeedTimeCroquettes = maintenantSec; // Met à jour le dernier temps de nourrissage
       compteurDeCroquettes++;                 // Mise à jour du compteur de croquettes
-      DEBUG_PRINTLN("Réinitialisation du compteur d'absence.");
+      DEBUG_PRINTLN("Reinitialisation du compteur d'absence.");
       compteurAbsenceChat = 0;
 
       // Sauvegarder dans la mémoire persistante
@@ -320,7 +323,7 @@ void feedCat(boolean grossePortion)
         DEBUG_PRINTLN("El gazou a deja eu sa gourmandise.");
         char message[56];                                                       // Nombre de caractères max pour le message
         const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
-        sprintf(message, "Dernières Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
+        sprintf(message, "Dernieres Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
         printMessage("No way", message, DISPLAY_TIME_SEC);
       }
     }
@@ -338,7 +341,7 @@ void getSavedSettings()
   compteurDeCroquettes = preferences.getUInt("compteurCroquette", 0);
   compteurDeCroquinettes = preferences.getUInt("compteurCroquinette", 0);
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
-  printMessage("Memory", "Données récupérées depuis la mémoire", DISPLAY_TIME_SEC);
+  printMessage("Memory", "Donnees recuperees depuis la memoire", DISPLAY_TIME_SEC);
 
   // DEBUG_PRINTLN("Données récupérées depuis la mémoire :");
   // char message[50];
@@ -453,17 +456,17 @@ void displayScreen(unsigned int displayTimeSec)
   const byte GRID_COL_1 = 75;
   const byte GRID_COL_2 = 95;
 
-  char timeBuffer[9];  // Espace pour "HH:MM:SS\0"
   char dateBuffer[11]; // Espace pour "DD/MM/YYYY\0"
   // Formatage de l'heure et de la date dans les buffers de char
-  sprintf(timeBuffer, "%02dh%02d", myRTC.hours, myRTC.minutes);
   sprintf(dateBuffer, "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
   // snprintf(dateBuffer, sizeof(dateBuffer), "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
   //  Convertir en heure
+  char heureActuelle[6];
   char heureCroquettes[6];
   char heureCroquinettes[6];
   char heureProchaineCroquettes[6];
   const int prochainCroqSec = lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY_SEC;
+  convertSecondsFromMidnightToTime(maintenantSec, heureActuelle);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
   convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
@@ -481,7 +484,7 @@ void displayScreen(unsigned int displayTimeSec)
   oled.setCursor(GRID_COL_0, GRID_LINE_0);
   oled.print(dateBuffer);
   oled.setCursor(GRID_COL_2, GRID_LINE_0);
-  oled.print(timeBuffer);
+  oled.print(heureActuelle);
 
   oled.setCursor(GRID_COL_0, GRID_LINE_1);
   oled.print("Croquettes");

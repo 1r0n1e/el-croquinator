@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // --- CONFIGURATION DEBUG ---
-#define DEBUG_ENABLED false // Mettre à false pour désactiver tout le debug
+#define DEBUG_ENABLED true // Mettre à false pour désactiver tout le debug
 // Définition des macros
 #if DEBUG_ENABLED
 #define DEBUG_PRINT(x)   \
