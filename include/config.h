@@ -60,17 +60,16 @@ const int DISPLAY_TIME_SEC = 5;     // Temps d'affichage en secondes
 unsigned long screenTimerStart = 0; // Quand a commencé l'affichage actuel
 unsigned long screenDuration = 0;   // Combien de temps ça doit durer (ms)
 
-// Bouton
-#define BOUTON_PIN D4                    // Pin du bouton poussoir
-const int DEBOUNCE_DELAY_MS = 50;        // Durée (ms) pour considérer une pression comme valide
+// Bouton Tactile TTP223
+#define BOUTON_PIN D4                    // Pin du bouton
 const int SHORT_PRESS_MAX_MS = 500;      // Un appui court doit être relâché avant 500ms
 const int LONG_PRESS_MIN_MS = 3000;      // Un appui très long est maintenu pendant au moins 3s
 const int DOUBLE_CLICK_TIMEOUT_MS = 300; // Délai maximum entre deux clics pour être considéré comme un double-clic
-boolean lastButtonState = HIGH;          // État précédent du bouton
-boolean buttonState = HIGH;              // État actuel du bouton (après anti-rebond)
-long lastDebounceTime = 0;               // Dernier moment où l'état a changé
-unsigned long pressStartTime = 0;        // Moment où le bouton a été pressé
-unsigned long releaseTime = 0;           // Moment où le bouton a été relâché
+const boolean BUTTON_DEFAULT_STATE = LOW;
+boolean lastButtonState = BUTTON_DEFAULT_STATE; // État précédent du bouton
+boolean buttonState = BUTTON_DEFAULT_STATE;     // État actuel du bouton
+unsigned long pressStartTime = 0;               // Moment où le bouton a été pressé
+unsigned long releaseTime = 0;                  // Moment où le bouton a été relâché
 int clickCount = 0;
 long lastClickTime = 0;
 

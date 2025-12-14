@@ -87,63 +87,55 @@ void loop()
   // --------- Inputs bouton (debut) --------- //
   // 1. Lecture de l'état actuel du bouton
   int reading = digitalRead(BOUTON_PIN);
-  // 2. Anti-rebond (Debounce) : On ne met à jour 'buttonState' que si l'état est stable
-  if (reading != lastButtonState)
-  {
-    lastDebounceTime = millis();
-  }
-  if ((millis() - lastDebounceTime) > DEBOUNCE_DELAY_MS)
-  { // Si l'état a été stable pendant plus de DEBOUNCE_DELAY_MS
-    if (reading != buttonState)
-    {                        // on vient d'appuyer sur le bouton
-      buttonState = reading; // mettre à jour 'buttonState'
+  if (reading != buttonState)
+  {                        // on vient d'appuyer sur le bouton
+    buttonState = reading; // mettre à jour 'buttonState'
 
-      // 3. Gestion de l'événement PUSH (Appui)
-      if (buttonState == LOW)
-      { // LOW car on utilise INPUT_PULLUP (le bouton tire la broche à la masse)
-        pressStartTime = millis();
-        DEBUG_PRINTLN("Le bouton est appuye");
-        //  Réinitialiser le compte de clic si le délai est dépassé
-        if (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS)
-        {
-          clickCount = 0;
-        }
+    // 3. Gestion de l'événement PUSH (Appui)
+    if (buttonState == !BUTTON_DEFAULT_STATE)
+    {
+      pressStartTime = millis();
+      DEBUG_PRINTLN("Le bouton est appuye");
+      //  Réinitialiser le compte de clic si le délai est dépassé
+      if (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS)
+      {
+        clickCount = 0;
       }
-      // 4. Gestion de l'événement RELEASE (Relâchement)
-      else
-      { // on vient de relacher le bouton
-        releaseTime = millis();
-        unsigned long pressDuration = releaseTime - pressStartTime;
-        DEBUG_PRINT("-> BOUTON RELACHE (Duree: ");
-        DEBUG_PRINT(pressDuration);
-        DEBUG_PRINTLN("ms)");
+    }
+    // 4. Gestion de l'événement RELEASE (Relâchement)
+    else
+    { // on vient de relacher le bouton
+      releaseTime = millis();
+      unsigned long pressDuration = releaseTime - pressStartTime;
+      DEBUG_PRINT("-> BOUTON RELACHE (Duree: ");
+      DEBUG_PRINT(pressDuration);
+      DEBUG_PRINTLN("ms)");
 
-        // Détection de l'appui LONG
-        if (pressDuration >= LONG_PRESS_MIN_MS * 2)
-        {
-          // CAS n°-1 : Appui TRES TRES LONG
-          DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
-          reinitialiserCompteurs();
-        }
-        else if (pressDuration >= LONG_PRESS_MIN_MS)
-        {
-          // CAS n°0 : Appui TRES LONG
-          DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
-          syncRTCFromWiFi();
-        }
-        else if (pressDuration >= SHORT_PRESS_MAX_MS)
-        {
-          // CAS n°1 : Appui LONG
-          DEBUG_PRINTLN("--- APPUIS LONG DETECTE ---");
-          clickCount = 0; // Annule tout double-clic potentiel
-          feedCat(0);     // Donner des croquinettes
-        }
-        // Détection de l'appui COURT (potentiel simple ou double clic)
-        else if (pressDuration > DEBOUNCE_DELAY_MS)
-        {
-          clickCount++;
-          lastClickTime = millis(); // Enregistre le moment du clic pour le timeout
-        }
+      // Détection de l'appui LONG
+      if (pressDuration >= LONG_PRESS_MIN_MS * 2)
+      {
+        // CAS n°-1 : Appui TRES TRES LONG
+        DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
+        reinitialiserCompteurs();
+      }
+      else if (pressDuration >= LONG_PRESS_MIN_MS)
+      {
+        // CAS n°0 : Appui TRES LONG
+        DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
+        syncRTCFromWiFi();
+      }
+      else if (pressDuration >= SHORT_PRESS_MAX_MS)
+      {
+        // CAS n°1 : Appui LONG
+        DEBUG_PRINTLN("--- APPUIS LONG DETECTE ---");
+        clickCount = 0; // Annule tout double-clic potentiel
+        feedCat(0);     // Donner des croquinettes
+      }
+      // Détection de l'appui COURT (potentiel simple ou double clic)
+      else
+      {
+        clickCount++;
+        lastClickTime = millis(); // Enregistre le moment du clic pour le timeout
       }
     }
   }
