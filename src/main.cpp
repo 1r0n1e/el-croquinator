@@ -55,7 +55,7 @@ void setup()
   syncRTCFromWiFi();                                           // Syncrhonisation de l'horloge interne
   monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
-  pinMode(BOUTON_PIN, INPUT_PULLUP);                           // Configuration du bouton poussoir
+  pinMode(BOUTON_PIN, INPUT);                                  // Configuration du bouton poussoir
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -75,7 +75,7 @@ void loop()
     // DEBUG_PRINTLN(maintenantSec);
     //  Si le chat est affamé : Verifier le délai depuis le dernier croq
     long deltaSecondes = maintenantSec - lastFeedTimeCroquettes; // interval de temps
-    const unsigned long delay = FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY_SEC;
+    const unsigned long delay = delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC;
     // char message[56];
     // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedTimeCroquettes, deltaSecondes, delay);
     // DEBUG_PRINTLN(message);
@@ -131,7 +131,11 @@ void loop()
         // CAS n°1 : Appui LONG
         DEBUG_PRINTLN("--- APPUIS LONG DETECTE ---");
         clickCount = 0; // Annule tout double-clic potentiel
-        feedCat(0);     // Donner des croquinettes
+        // Affiche le temps restant avant les prochaines croquettes
+        char message[81]; // Nombre de caractères max pour le message
+        const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
+        sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
+        printMessage("Autocroq", message, DISPLAY_TIME_SEC);
       }
       // Détection de l'appui COURT (potentiel simple ou double clic)
       else
@@ -145,19 +149,19 @@ void loop()
   // On vérifie s'il y a eu un ou plusieurs clics, et si le délai de double-clic est écoulé
   if (clickCount > 0 && (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS))
   {
-    if (clickCount == 2)
+    if (clickCount == 3)
+    // CAS n°1 : Triple click ou plus : Distribution dose normal de croquettes
     {
-      // CAS n°2 : Double clic
+      feedCat(1);
+    }
+    else if (clickCount == 2)
+    { // CAS n °2 : Double clic : Distribution de croquinettes
       DEBUG_PRINTLN("--- DOUBLE APPUIS DETECTE ---");
-      // Affiche le temps restant avant les prochaines croquettes
-      char message[81]; // Nombre de caractères max pour le message
-      const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
-      sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
-      printMessage("Autocroq", message, DISPLAY_TIME_SEC);
+      feedCat(0); // Donner des croquinettes
     }
     else if (clickCount == 1)
     {
-      // CAS n°3 : Simple clic
+      // CAS n°3 : Simple clic : Affichage écran
       DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
       displayScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
     }
@@ -181,6 +185,7 @@ void reinitialiserCompteurs()
   compteurAbsenceChat = 0;
   lastFeedTimeCroquettes = ((HEURE_DEBUT_MIAM * 60 + MINUTE_DEBUT_MIAM) * 60) - FEED_DELAY_CROQUETTES_SEC;
   lastFeedTimeCroquinettes = 0;
+  delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
 
   preferences.begin("croquinator", true);
   lastFeedTimeCroquettes = preferences.putULong("croquetteTime", lastFeedTimeCroquettes);
@@ -221,10 +226,29 @@ int calculerMasseEngloutie()
 {
   return compteurDeCroquettes * RATION_CROQUETTES_G + compteurDeCroquinettes * RATION_CROQUINETTES_G;
 };
+void optimiserDelayDistributionCroquettes()
+{
+  masseEngloutieParLeChatEnG = calculerMasseEngloutie();
+  const long finDeLaPlageDansSec = ((HEURE_FIN_MIAM * 60 + MINUTE_FIN_MIAM) * 60) - maintenantSec;
+  const int nombreDistributionCroquettesRestant = (RATION_CROQUETTES_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
+  if (finDeLaPlageDansSec > 0 && nombreDistributionCroquettesRestant > 0)
+  {
+    delayDistributionCroquettesSec = finDeLaPlageDansSec / nombreDistributionCroquettesRestant;
+    DEBUG_PRINTLN("Délai de distribution des croquettes ajusté");
+    DEBUG_PRINT("Temps restant en heure : ");
+    char timeBuffer[6];
+    convertSecondsFromMidnightToTime(finDeLaPlageDansSec, timeBuffer);
+    DEBUG_PRINTLN(timeBuffer);
+    DEBUG_PRINT("Nombre de distributions restantes: ");
+    DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
+    DEBUG_PRINT("Nouveau délai (min): ");
+    DEBUG_PRINTLN(delayDistributionCroquettesSec / 60);
+  }
+}
 boolean verifierRegime()
 {
   DEBUG_PRINT("Verification du régime du chat... ");
-  // masseEngloutieParLeChatEnG = calculerMasseEngloutie();
+  masseEngloutieParLeChatEnG = calculerMasseEngloutie();
   DEBUG_PRINT(masseEngloutieParLeChatEnG);
   if (masseEngloutieParLeChatEnG < RATION_QUOTIDIENNE_G)
   {
@@ -311,6 +335,7 @@ void feedCat(boolean grossePortion)
       openValve(CROQUETTES);                  // Nourrir le chat avec une portion complète
       lastFeedTimeCroquettes = maintenantSec; // Met à jour le dernier temps de nourrissage
       compteurDeCroquettes++;                 // Mise à jour du compteur de croquettes
+      optimiserDelayDistributionCroquettes();
       DEBUG_PRINTLN("Reinitialisation du compteur d'absence.");
       compteurAbsenceChat = 0;
 
@@ -336,6 +361,7 @@ void feedCat(boolean grossePortion)
         openValve(CROQUINETTES);                  // Nourrir le chat avec quelques croquettes
         lastFeedTimeCroquinettes = maintenantSec; // Met à jour le dernier temps de gourmandise
         compteurDeCroquinettes++;                 // Mise à jour du compteur de croquinettes
+        optimiserDelayDistributionCroquettes();
 
         // Sauvegarder dans la mémoire persistante
         preferences.begin("croquinator", false);
@@ -493,7 +519,7 @@ void displayScreen(unsigned int displayTimeSec)
   char heureCroquettes[6];
   char heureCroquinettes[6];
   char heureProchaineCroquettes[6];
-  const int prochainCroqSec = lastFeedTimeCroquettes + FEED_DELAY_CROQUETTES_SEC + compteurAbsenceChat * SNOOZE_DELAY_SEC;
+  const int prochainCroqSec = lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC;
   convertSecondsFromMidnightToTime(maintenantSec, heureActuelle);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);

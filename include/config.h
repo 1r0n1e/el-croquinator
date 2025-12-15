@@ -79,20 +79,21 @@ int HEURE_DEBUT_MIAM = 7;
 int MINUTE_DEBUT_MIAM = 30;
 int HEURE_FIN_MIAM = 23;
 int MINUTE_FIN_MIAM = 15;
-boolean dansLaPlageHoraire = true;                    // Activer ou désactiver la plage horaire de nourrissage
-const unsigned long FEED_DELAY_CROQUETTES_SEC = 60;   // 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
-const unsigned long FEED_DELAY_CROQUINETTES_SEC = 60; // 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
-const unsigned long SNOOZE_DELAY_SEC = 30;            // 30 * 60;              // Délai en cas de présence de croquettes (30 minutes)
-unsigned long lastFeedTimeCroquettes = 0;             // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
-unsigned long lastFeedTimeCroquinettes = 0;           // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
-unsigned long maintenantSec = 0;                      // heure actuelle (en secondes depuis minuit)
-unsigned int compteurAbsenceChat = 0;                 // Nombre de reports de distributions de croquettes
-unsigned int compteurDeCroquettes = 0;                // Nombre de distributions de croquettes pour ce jour
-unsigned int compteurDeCroquinettes = 0;              // Nombre de distributions de croquinettes pour ce jour
+boolean dansLaPlageHoraire = true;                           // Activer ou désactiver la plage horaire de nourrissage
+const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
+const unsigned long FEED_DELAY_CROQUINETTES_SEC = 60;        // 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
+const unsigned long SNOOZE_DELAY_SEC = 30;                   // 30 * 60;              // Délai en cas de présence de croquettes (30 minutes)
+unsigned long lastFeedTimeCroquettes = 0;                    // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
+unsigned long lastFeedTimeCroquinettes = 0;                  // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
+unsigned long maintenantSec = 0;                             // heure actuelle (en secondes depuis minuit)
+unsigned int compteurAbsenceChat = 0;                        // Nombre de reports de distributions de croquettes
+unsigned int compteurDeCroquettes = 0;                       // Nombre de distributions de croquettes pour ce jour
+unsigned int compteurDeCroquinettes = 0;                     // Nombre de distributions de croquinettes pour ce jour
 
 // --- PARAMETRES FitCat ---
 const int RATION_QUOTIDIENNE_G = 75; // Ration quotidienne (en g) idéale pour El Gazou
 const int RATION_CROQUETTES_G = 5;   // Ration croquettes (en g) par distribution
 const int RATION_CROQUINETTES_G = 1; // Ration croquinettes (en g) par distribution
 int masseEngloutieParLeChatEnG = 0;
+unsigned long delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
 #endif
