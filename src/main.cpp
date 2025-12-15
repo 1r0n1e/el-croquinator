@@ -1,8 +1,7 @@
 #include <Arduino.h>
-#include <Adafruit_SSD1306.h> // Ecran OLED
-#include <Servo.h>            // Servomoteur
-#include "virtuabotixRTC.h"   // RTC module 2
-#include <Preferences.h>      // Persistent memory
+#include <Servo.h>          // Servomoteur
+#include "virtuabotixRTC.h" // RTC module 2
+#include <Preferences.h>    // Persistent memory
 #ifdef ESP32
 #include <WiFi.h>
 #else
@@ -10,28 +9,27 @@
 #endif
 
 // --- INCLUSIONS PERSO ---
+#include <OLEDDisplay.h>
 #include <InputBouton.h>
 #include "config.h" //  pins, constantes et variables globales
 #include "images.h" //  image de chat
 
 // --- OBJETS GLOBAUX ---
-Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN); // Ecran OLED
-virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN);      // RTC module 2
-Servo monServomoteur;                                                      // Servomoteur
-Preferences preferences;                                                   // Persistent memory
+virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN); // RTC module 2
+Servo monServomoteur;                                                 // Servomoteur
+Preferences preferences;                                              // Persistent memory
+OLEDDisplay oled(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_I2C_ADRESS);
 InputBouton boutonTactile(BOUTON_PIN, LOW, INPUT);
 
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /                                                           // (setup) Connecte la mémoire persistante
-void setupWiFi();                                                                       // (setup) Connecte le wifi
-void getSavedSettings();                                                                // (setup) Récupère la data de la mémoire persistante
-void setupScreen();                                                                     // (setup) Connecte l'écran OLED
-void setupBoutons();                                                                    // (setup) Initialise les paramètres boutons
-void manageDisplay();                                                                   // (loop) gère les temps d'affichage sur l'écran oled
-void printMessage(const char *title, const char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
-void printImage(unsigned int displayTimeSec);                                           // Affichage d'une image au centre de l'écran
-void displayScreen(unsigned int displayTimeSec);                                        // Affiche l'écran de bord
-void reinitialiserCompteurs();                                                          // Réinitialise les compteurs
-boolean verifierPlageHoraire();                                                         // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire
+void setupWiFi();                                    // (setup) Connecte le wifi
+void getSavedSettings();                             // (setup) Récupère la data de la mémoire persistante
+void setupBoutons();                                 // (setup) Initialise les paramètres boutons
+void setupScreen();                                  // (setup) Connecte l'écran OLED
+void displayHomeScreen(unsigned int displayTimeSec); // Affiche l'écran de bord
+void displayInfoScreen(unsigned int displayTimeSec); // Affiche les compteurs
+void reinitialiserCompteurs();                       // Réinitialise les compteurs
+boolean verifierPlageHoraire();                      // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire
 int calculerMasseEngloutie();
 boolean verifierRegime();
 boolean detecterCroquettes();                                                  // Détecte la présence de croquette, retourne (0) abscence || (1) présence
@@ -104,17 +102,13 @@ void loop()
 
   case BUTTON_SHORT_CLICK:
     DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
-    displayScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
+    displayHomeScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
     break;
 
   case BUTTON_LONG_PRESS:
   {
     DEBUG_PRINTLN("--- APPUI LONG DETECTE ---");
-    // Affiche le temps restant avant les prochaines croquettes
-    char message[81]; // Nombre de caractères max pour le message
-    const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
-    sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
-    printMessage("Autocroq", message, DISPLAY_TIME_SEC);
+    displayInfoScreen(DISPLAY_TIME_SEC); // Affiche les compteurs
     break;
   }
 
@@ -151,8 +145,8 @@ void loop()
   }
   // --------- Inputs bouton (fin) --------- //
 
-  manageDisplay(); // Loop Ecran OLED
-  delay(1);        // Délais de fin de boucle
+  oled.update(); // Loop Ecran OLED
+  delay(1);      // Délais de fin de boucle
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
@@ -175,7 +169,7 @@ void reinitialiserCompteurs()
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
   DEBUG_PRINTLN("Compteurs reinitialises.");
-  printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
+  oled.printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
 }
 boolean verifierPlageHoraire()
 {
@@ -208,19 +202,26 @@ int calculerMasseEngloutie()
 };
 void optimiserDelayDistributionCroquettes()
 {
+  DEBUG_PRINT("Optimisation de la prochaine distribution.. ");
   masseEngloutieParLeChatEnG = calculerMasseEngloutie();
   const long finDeLaPlageDansSec = ((HEURE_FIN_MIAM * 60 + MINUTE_FIN_MIAM) * 60) - maintenantSec;
-  const int nombreDistributionCroquettesRestant = (RATION_CROQUETTES_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
-  if (finDeLaPlageDansSec > 0 && nombreDistributionCroquettesRestant > 0)
+  const int nombreDistributionCroquettesRestant = (RATION_QUOTIDIENNE_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
+  
+  DEBUG_PRINT("Nombre de distributions restantes: ");
+  DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
+  
+  if (finDeLaPlageDansSec <= 0)
+  {
+    DEBUG_PRINTLN("Inutile, nous sommes en dehors de la plage horaire.");
+  }
+  else if (nombreDistributionCroquettesRestant <= 0)
+  {
+    DEBUG_PRINTLN("Inutile, toutes les croquettes ont été distribuées.");
+  }
+  else
   {
     delayDistributionCroquettesSec = finDeLaPlageDansSec / nombreDistributionCroquettesRestant;
     DEBUG_PRINTLN("Délai de distribution des croquettes ajusté");
-    DEBUG_PRINT("Temps restant en heure : ");
-    char timeBuffer[6];
-    convertSecondsFromMidnightToTime(finDeLaPlageDansSec, timeBuffer);
-    DEBUG_PRINTLN(timeBuffer);
-    DEBUG_PRINT("Nombre de distributions restantes: ");
-    DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
     DEBUG_PRINT("Nouveau délai (min): ");
     DEBUG_PRINTLN(delayDistributionCroquettesSec / 60);
   }
@@ -284,12 +285,12 @@ void feedCat(boolean grossePortion)
     { // Croquettes
       DEBUG_PRINTLN("Distribution des croquettes reportee");
       compteurAbsenceChat++;
-      printMessage("No gazou", "Gazou est absent, distribution des croquettes reportee de 30min..", DISPLAY_TIME_SEC);
+      oled.printMessage("No gazou", "Gazou est absent, distribution des croquettes reportee de 30min..", DISPLAY_TIME_SEC);
     }
     else
     { // Croquinettes
       DEBUG_PRINTLN("Pas de croquinettes pour les chats qui ne mangent pas");
-      printMessage("No way", "Il y a deja des croquettes dans la gamelles !", DISPLAY_TIME_SEC);
+      oled.printMessage("No way", "Il y a deja des croquettes dans la gamelles !", DISPLAY_TIME_SEC);
     }
   }
   // Fin du CAS n°1 - Il y a déja des croquettes
@@ -297,7 +298,7 @@ void feedCat(boolean grossePortion)
   // CAS n°2 - Le régime n'est pas respecté
   else if (leRegimeEstRespecte == false)
   {
-    printMessage("No Grazou", "Distribution annulee. Gazou a suffisamment mange aujourd'hui !", DISPLAY_TIME_SEC);
+    oled.printMessage("No Grazou", "Distribution annulee. Gazou a suffisamment mange aujourd'hui !", DISPLAY_TIME_SEC);
   }
   // Fin du CAS n°2 - Le régime n'est pas respecté
 
@@ -305,8 +306,9 @@ void feedCat(boolean grossePortion)
   else
   {
     DEBUG_PRINT("Distribution ");
-    printImage(DISPLAY_TIME_SEC); // Afficher l'image du chat
-    // Bonus: Prévenir le chat avec un son ou une led
+    // Afficher l'image du chat
+    oled.printImageCentered(IMAGE_CHAT, IMAGE_WIDTH, IMAGE_HEIGHT);
+    //  Bonus: Prévenir le chat avec un son ou une led
 
     // CAS n°3a - Croquettes
     if (grossePortion == true)
@@ -325,7 +327,7 @@ void feedCat(boolean grossePortion)
       preferences.putUInt("compteurCroquette", compteurDeCroquettes);
       preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
-      printMessage("Miam", "El Gazou a eu sa dose", DISPLAY_TIME_SEC);
+      oled.printMessage("Miam", "El Gazou a eu sa dose", DISPLAY_TIME_SEC);
       DEBUG_PRINTLN("El Gazou a eu sa dose");
     }
 
@@ -350,7 +352,7 @@ void feedCat(boolean grossePortion)
         preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
 
         DEBUG_PRINTLN("El gazou est servi !");
-        printMessage("Miaou", "El Gazou est servi !", DISPLAY_TIME_SEC);
+        oled.printMessage("Miaou", "El Gazou est servi !", DISPLAY_TIME_SEC);
       }
       else
       {
@@ -358,7 +360,7 @@ void feedCat(boolean grossePortion)
         char message[56];                                                       // Nombre de caractères max pour le message
         const unsigned int deltaMinutes = deltaSecondes / 60;                   // conversion en minutes
         sprintf(message, "Dernieres Croquinettes il y a %d min", deltaMinutes); // Prépare le message à afficher
-        printMessage("No way", message, DISPLAY_TIME_SEC);
+        oled.printMessage("No way", message, DISPLAY_TIME_SEC);
       }
     }
   }
@@ -386,7 +388,7 @@ void getSavedSettings()
   compteurDeCroquettes = preferences.getUInt("compteurCroquette", 0);
   compteurDeCroquinettes = preferences.getUInt("compteurCroquinette", 0);
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
-  printMessage("Memory", "Donnees recuperees depuis la memoire", DISPLAY_TIME_SEC);
+  oled.printMessage("Memory", "Donnees recuperees depuis la memoire", DISPLAY_TIME_SEC);
 
   // DEBUG_PRINTLN("Données récupérées depuis la mémoire :");
   // char message[50];
@@ -402,7 +404,7 @@ void setupWiFi()
     WiFi.mode(WIFI_STA);
     WiFi.begin(SSID, PASSWORD);
     DEBUG_PRINT("Connecting to WiFi ..");
-    printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
+    oled.printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
     while (WiFi.status() != WL_CONNECTED)
     {
       DEBUG_PRINT('.');
@@ -412,7 +414,37 @@ void setupWiFi()
   else
   {
     DEBUG_PRINTLN("WiFi connected.");
-    printMessage("WiFi", "WiFi connected.", DISPLAY_TIME_SEC);
+    oled.printMessage("WiFi", "WiFi connected.", DISPLAY_TIME_SEC);
+  }
+}
+int getWiFiSignalLevel()
+{
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    return 0; // Pas de connexion
+  }
+  long rssi = WiFi.RSSI();
+  DEBUG_PRINT("Niveau du signal WiFi (dBm): ");
+  DEBUG_PRINTLN(rssi);
+  if (rssi > -55)
+  {
+    return 4; // Excellent
+  }
+  else if (rssi > -70)
+  {
+    return 3; // Bon
+  }
+  else if (rssi > -80)
+  {
+    return 2; // Moyen
+  }
+  else if (rssi > -90)
+  {
+    return 1; // Faible
+  }
+  else
+  {
+    return 0; // Très faible/Inutilisable
   }
 }
 void printWiFiTime() // (debug) Imprimer la date du WiFi
@@ -436,128 +468,77 @@ void printWiFiTime() // (debug) Imprimer la date du WiFi
 // Initialisation de l'écran OLED
 void setupScreen()
 {
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADRESS))
+  if (!oled.begin())
   {
-    DEBUG_PRINTLN(F("Erreur de communication avec le chipset SSD1306… arrêt du programme."));
-    while (1)
-      ; // Arrêt du programme (boucle infinie)
+    DEBUG_PRINTLN("Erreur d'initialisation OLED !");
   }
   else
   {
-    DEBUG_PRINTLN(F("Initialisation du contrôleur SSD1306 réussi."));
-  }
-  printImage(DISPLAY_TIME_SEC);
-}
-// Fonction d'affichage principal, appeler dans la loop pour gérer les temps de display
-void manageDisplay()
-{
-  unsigned long currentMillis = millis();
-  if (currentMillis - screenTimerStart >= screenDuration)
-  {                      // Si le délais d'affichage est dépassé
-    oled.clearDisplay(); // Écrit des zéros dans le buffer
-    oled.display();      // Envoie le buffer noir à l'écran
-    // DEBUG_PRINTLN(F("OLED effacé (écran noir)."));
+    DEBUG_PRINTLN("Chargement du système...");
+    for (int i = 0; i <= 100; i += 10)
+    {
+      oled.printImageWithProgress(IMAGE_CHAT, IMAGE_WIDTH, IMAGE_HEIGHT, i);
+      delay(50);
+    }
+    delay(100);
   }
 }
-void printMessage(const char *title, const char *message, unsigned int displayTimeSec)
+
+void displayHomeScreen(unsigned int displayTimeSec)
 {
-  // On configure le timer
-  screenDuration = displayTimeSec * 1000UL; // Conversion en ms
-  screenTimerStart = millis();
-  // On affiche
-  oled.clearDisplay();
-  oled.setTextColor(WHITE);
-  oled.setCursor(0, 1);
-  oled.setTextSize(2);
-  oled.println(title);
-  oled.println();
-  oled.setTextSize(1);
-  oled.println(message);
-  oled.display();
+  oled.clear();
+
+  // En-tête avec indicateur de WiFi
+  oled.printDate(myRTC.dayofmonth, myRTC.month, myRTC.year, ALIGN_LEFT, 0);
+  const int wifiSignal = getWiFiSignalLevel();
+  oled.drawWifiSignal(115, 0, wifiSignal);
+
+  // Heure actuelle
+  oled.printTime(myRTC.hours, myRTC.minutes, ALIGN_CENTER, 17, 2);
+
+  // Prochaine distribution
+  int prochainCroqSec = (lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC);
+  char heureCroquettes[6];
+  convertSecondsFromMidnightToTime(prochainCroqSec, heureCroquettes);
+  oled.printTextAligned("Prochain croq:", ALIGN_LEFT, 40);
+  oled.printTextAligned(heureCroquettes, ALIGN_RIGHT, 40);
+
+  // Barre de progression
+  const float progress = masseEngloutieParLeChatEnG * 100 / RATION_QUOTIDIENNE_G;
+  DEBUG_PRINT("AutoFeed (%) : ");
+  DEBUG_PRINTLN(progress);
+  oled.drawProgressBarBottom(progress, true);
+
+  oled.refresh();
+  oled.startTimer(displayTimeSec);
 }
-// Affichage d'une image au centre de l'écran
-void printImage(unsigned int displayTimeSec)
+
+void displayInfoScreen(unsigned int displayTimeSec)
 {
-  screenDuration = displayTimeSec * 1000UL;
-  screenTimerStart = millis();
-
-  oled.clearDisplay();
-  oled.drawBitmap(
-      (oled.width() - IMAGE_WIDTH) / 2,
-      (oled.height() - IMAGE_HEIGHT) / 2,
-      IMAGE_CHAT, IMAGE_WIDTH, IMAGE_HEIGHT, WHITE);
-  oled.display();
-}
-void displayScreen(unsigned int displayTimeSec)
-{
-  screenDuration = displayTimeSec * 1000UL;
-  screenTimerStart = millis();
-
-  const byte GRID_LINE_0 = 1;
-  const byte GRID_LINE_1 = 20;
-  const byte GRID_LINE_2 = 35;
-  const byte GRID_LINE_3 = 50;
-  const byte GRID_COL_0 = 0;
-  const byte GRID_COL_1 = 75;
-  const byte GRID_COL_2 = 95;
-
-  char dateBuffer[11]; // Espace pour "DD/MM/YYYY\0"
-  // Formatage de l'heure et de la date dans les buffers de char
-  sprintf(dateBuffer, "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
-  // snprintf(dateBuffer, sizeof(dateBuffer), "%02d/%02d/%04d", myRTC.dayofmonth, myRTC.month, myRTC.year);
-  //  Convertir en heure
-  char heureActuelle[6];
+  const int wifiSignal = getWiFiSignalLevel();
   char heureCroquettes[6];
   char heureCroquinettes[6];
-  char heureProchaineCroquettes[6];
-  const int prochainCroqSec = lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC;
-  convertSecondsFromMidnightToTime(maintenantSec, heureActuelle);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
-  convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
 
-  // DEBUG_PRINT("Maintenant sec : ");
-  // DEBUG_PRINTLN(maintenantSec);
-  // DEBUG_PRINT("Heure actuelle : ");
-  // DEBUG_PRINTLN(heureActuelle);
-  // DEBUG_PRINT("Date : ");
-  // DEBUG_PRINTLN(dateBuffer);
+  oled.clear();
 
-  // Convertir en string
-  char nombreDeCroquettes[3];   // Espace pour "00\0"
-  char nombreDeCroquinettes[3]; // Espace pour "00\0"
-  sprintf(nombreDeCroquettes, "%02d", compteurDeCroquettes);
-  sprintf(nombreDeCroquinettes, "%02d", compteurDeCroquinettes);
+  // En-tête avec indicateur de WiFi
+  oled.printText("Compteurs", 0, 0, 1);
+  oled.drawWifiSignal(115, 0, wifiSignal);
 
-  oled.clearDisplay();      // Vidange du buffer de l'écran OLED
-  oled.setTextColor(WHITE); // Couleur "blanche" (ou colorée, si votre afficheur monochrome est bleu, jaune, ou bleu/jaune)
-  oled.setTextSize(1);      // Sélection de l'échelle 1:1
+  oled.printTextAligned("Croquettes", ALIGN_LEFT, 20);
+  oled.printValue(" - ", compteurDeCroquettes, 0, "", 30);
+  oled.printTextAligned(heureCroquettes, ALIGN_RIGHT, 30);
+  // oled.printTime(8, 21, ALIGN_RIGHT, 26, 1);
 
-  oled.setCursor(GRID_COL_0, GRID_LINE_0);
-  oled.print(dateBuffer);
-  oled.setCursor(GRID_COL_2, GRID_LINE_0);
-  oled.print(heureActuelle);
+  oled.printTextAligned("Croquinettes", ALIGN_LEFT, 46);
+  oled.printValue(" - ", compteurDeCroquinettes, 0, "", 56);
+  oled.printTextAligned(heureCroquinettes, ALIGN_RIGHT, 56);
+  // oled.printTime(8, 17, ALIGN_RIGHT, 56, 1);
 
-  oled.setCursor(GRID_COL_0, GRID_LINE_1);
-  oled.print("Croquettes");
-  oled.setCursor(GRID_COL_1, GRID_LINE_1);
-  oled.print(nombreDeCroquettes);
-  oled.setCursor(GRID_COL_2, GRID_LINE_1);
-  oled.print(heureCroquettes);
-
-  oled.setCursor(GRID_COL_0, GRID_LINE_2);
-  oled.print("Croquinettes");
-  oled.setCursor(GRID_COL_1, GRID_LINE_2);
-  oled.print(nombreDeCroquinettes);
-  oled.setCursor(GRID_COL_2, GRID_LINE_2);
-  oled.print(heureCroquinettes);
-
-  oled.setCursor(GRID_COL_0, GRID_LINE_3);
-  oled.print("Prochain croq");
-  oled.setCursor(GRID_COL_2, GRID_LINE_3);
-  oled.print(heureProchaineCroquettes);
-
-  oled.display();
+  oled.refresh();
+  oled.startTimer(displayTimeSec);
 }
 // -------------------       FONCTIONS: Ecran OLED (fin)      ------------------- /
 
@@ -566,7 +547,7 @@ void syncRTCFromWiFi()
 {
 
   DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
-  printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
+  oled.printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
   setupWiFi();        // Vérifier que le WiFi est connecté
   struct tm timeinfo; //  Récupérer l'heure du WiFi
   if (getLocalTime(&timeinfo))
@@ -587,7 +568,7 @@ void syncRTCFromWiFi()
     if (myRTC.year == 2000)
     {
       DEBUG_PRINTLN("Synchronisation RTC échouée, vérifier la batterie ou le branchement.");
-      printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 15 * 60);
+      oled.printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 15 * 60);
       // Ressayer toutes les 15min
       delay(15 * 60 * 1000);
       syncRTCFromWiFi();
@@ -607,13 +588,13 @@ void syncRTCFromWiFi()
       DEBUG_PRINT(":");
       DEBUG_PRINTLN(timeinfo.tm_sec);
       DEBUG_PRINTLN("Synchronisation RTC réussie.");
-      printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
+      oled.printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
     }
   }
   else
   {
     DEBUG_PRINTLN("Synchronisation RTC échouée car l'heure WiFi n'a pas pu être récupérée.");
-    printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", DISPLAY_TIME_SEC);
+    oled.printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", DISPLAY_TIME_SEC);
   }
 }
 void getRtcTime()

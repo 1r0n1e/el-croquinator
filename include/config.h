@@ -52,13 +52,11 @@ const unsigned int CROQUETTES = 500;   // temps (ms) ouverture longue
 #define IR_PIN D0 // Pin du capteur ir
 
 // --- ECRAN OLED ---
-#define SCREEN_WIDTH 128            // Taille de l'écran OLED, en pixel, au niveau de sa largeur
-#define SCREEN_HEIGHT 64            // Taille de l'écran OLED, en pixel, au niveau de sa hauteur
-#define OLED_RESET_PIN -1           // Reset de l'OLED partagé avec l'Arduino (d'où la valeur à -1, et non un numéro de pin)
-#define OLED_I2C_ADRESS 0x3C        // Adresse de "mon" écran OLED sur le bus i2c (généralement égal à 0x3C ou 0x3D)
-const int DISPLAY_TIME_SEC = 5;     // Temps d'affichage en secondes
-unsigned long screenTimerStart = 0; // Quand a commencé l'affichage actuel
-unsigned long screenDuration = 0;   // Combien de temps ça doit durer (ms)
+#define SCREEN_WIDTH 128        // Taille de l'écran OLED, en pixel, au niveau de sa largeur
+#define SCREEN_HEIGHT 64        // Taille de l'écran OLED, en pixel, au niveau de sa hauteur
+#define OLED_RESET_PIN -1       // Reset de l'OLED partagé avec l'Arduino (d'où la valeur à -1, et non un numéro de pin)
+#define OLED_I2C_ADRESS 0x3C    // Adresse de "mon" écran OLED sur le bus i2c (généralement égal à 0x3C ou 0x3D)
+const int DISPLAY_TIME_SEC = 5; // Temps d'affichage en secondes
 
 // Bouton Tactile TTP223
 #define BOUTON_PIN D8 // Pin du bouton
