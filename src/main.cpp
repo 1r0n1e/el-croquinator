@@ -10,6 +10,7 @@
 #endif
 
 // --- INCLUSIONS PERSO ---
+#include <InputBouton.h>
 #include "config.h" //  pins, constantes et variables globales
 #include "images.h" //  image de chat
 
@@ -18,11 +19,13 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN); // Ec
 virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN);      // RTC module 2
 Servo monServomoteur;                                                      // Servomoteur
 Preferences preferences;                                                   // Persistent memory
+InputBouton boutonTactile(BOUTON_PIN, LOW, INPUT);
 
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /                                                           // (setup) Connecte la mémoire persistante
 void setupWiFi();                                                                       // (setup) Connecte le wifi
 void getSavedSettings();                                                                // (setup) Récupère la data de la mémoire persistante
 void setupScreen();                                                                     // (setup) Connecte l'écran OLED
+void setupBoutons();                                                                    // (setup) Initialise les paramètres boutons
 void manageDisplay();                                                                   // (loop) gère les temps d'affichage sur l'écran oled
 void printMessage(const char *title, const char *message, unsigned int displayTimeSec); // Affiche un message sur l'écran OLED
 void printImage(unsigned int displayTimeSec);                                           // Affichage d'une image au centre de l'écran
@@ -55,7 +58,7 @@ void setup()
   syncRTCFromWiFi();                                           // Syncrhonisation de l'horloge interne
   monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
-  pinMode(BOUTON_PIN, INPUT);                                  // Configuration du bouton poussoir
+  setupBoutons();                                              // Configuration des boutons
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -65,10 +68,9 @@ void loop()
   // DEBUG_PRINTLN("Début de la Boucle principale");
   // getRtcTime();
 
+  // --------- AutoCatFeed (début) --------- //
   myRTC.updateTime();                          // Always update time
   maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
-
-  // --------- AutoCatFeed (début) --------- //
   dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs
   if (dansLaPlageHoraire == true)
   {
@@ -87,88 +89,66 @@ void loop()
   // --------- AutoCatFeed (fin) --------- //
 
   // --------- Inputs bouton (debut) --------- //
-  // 1. Lecture de l'état actuel du bouton
-  int reading = digitalRead(BOUTON_PIN);
-  if (reading != buttonState)
-  {                        // on vient d'appuyer sur le bouton
-    buttonState = reading; // mettre à jour 'buttonState'
-
-    // 3. Gestion de l'événement PUSH (Appui)
-    if (buttonState == !BUTTON_DEFAULT_STATE)
-    {
-      pressStartTime = millis();
-      DEBUG_PRINTLN("Le bouton est appuye");
-      //  Réinitialiser le compte de clic si le délai est dépassé
-      if (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS)
-      {
-        clickCount = 0;
-      }
-    }
-    // 4. Gestion de l'événement RELEASE (Relâchement)
-    else
-    { // on vient de relacher le bouton
-      releaseTime = millis();
-      unsigned long pressDuration = releaseTime - pressStartTime;
-      DEBUG_PRINT("-> BOUTON RELACHE (Duree: ");
-      DEBUG_PRINT(pressDuration);
-      DEBUG_PRINTLN("ms)");
-
-      // Détection de l'appui LONG
-      if (pressDuration >= LONG_PRESS_MIN_MS * 2)
-      {
-        // CAS n°-1 : Appui TRES TRES LONG
-        DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
-        reinitialiserCompteurs();
-      }
-      else if (pressDuration >= LONG_PRESS_MIN_MS)
-      {
-        // CAS n°0 : Appui TRES LONG
-        DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
-        syncRTCFromWiFi();
-      }
-      else if (pressDuration >= SHORT_PRESS_MAX_MS)
-      {
-        // CAS n°1 : Appui LONG
-        DEBUG_PRINTLN("--- APPUIS LONG DETECTE ---");
-        clickCount = 0; // Annule tout double-clic potentiel
-        // Affiche le temps restant avant les prochaines croquettes
-        char message[81]; // Nombre de caractères max pour le message
-        const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
-        sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
-        printMessage("Autocroq", message, DISPLAY_TIME_SEC);
-      }
-      // Détection de l'appui COURT (potentiel simple ou double clic)
-      else
-      {
-        clickCount++;
-        lastClickTime = millis(); // Enregistre le moment du clic pour le timeout
-      }
-    }
-  }
-  // 5. Détection du DOUBLE-CLIC ou du SIMPLE-CLIC
-  // On vérifie s'il y a eu un ou plusieurs clics, et si le délai de double-clic est écoulé
-  if (clickCount > 0 && (millis() - lastClickTime > DOUBLE_CLICK_TIMEOUT_MS))
+  ButtonEvent event = boutonTactile.update(); // Appeler update() à chaque itération
+  switch (event)                              // Traiter les événements
   {
-    if (clickCount == 3)
-    // CAS n°1 : Triple click ou plus : Distribution dose normal de croquettes
+  case BUTTON_PRESSED:
+    DEBUG_PRINTLN("-> BOUTON PRESSE");
+    break;
+
+  case BUTTON_RELEASED:
+    DEBUG_PRINT("-> BOUTON RELACHE (Duree: ");
+    DEBUG_PRINT(boutonTactile.getPressDuration());
+    DEBUG_PRINTLN("ms)");
+    break;
+
+  case BUTTON_SHORT_CLICK:
+    DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
+    displayScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
+    break;
+
+  case BUTTON_LONG_PRESS:
+  {
+    DEBUG_PRINTLN("--- APPUI LONG DETECTE ---");
+    // Affiche le temps restant avant les prochaines croquettes
+    char message[81]; // Nombre de caractères max pour le message
+    const unsigned int deltaMinutes = (lastFeedTimeCroquinettes + FEED_DELAY_CROQUINETTES_SEC - maintenantSec) / 60;
+    sprintf(message, "El Gazou a englouti %d/%dg de croquettes. Prochaines croquinettes disponibles dans %d min.", masseEngloutieParLeChatEnG, RATION_QUOTIDIENNE_G, deltaMinutes);
+    printMessage("Autocroq", message, DISPLAY_TIME_SEC);
+    break;
+  }
+
+  case BUTTON_VERY_LONG_PRESS:
+    DEBUG_PRINTLN("--- APPUIS TRES LONG DETECTE ---");
+    syncRTCFromWiFi();
+    break;
+
+  case BUTTON_VERY_VERY_LONG_PRESS:
+    DEBUG_PRINTLN("--- APPUIS TRES TRES LONG DETECTE ---");
+    reinitialiserCompteurs();
+    break;
+
+  case BUTTON_MULTI_CLICK:
+  {
+    DEBUG_PRINTLN("--- MULTI CLIC DETECTE ---");
+    uint8_t clics = boutonTactile.getClickCount();
+    DEBUG_PRINT(clics);
+    DEBUG_PRINTLN(" clics");
+    if (clics == 2)
     {
-      feedCat(1);
-    }
-    else if (clickCount == 2)
-    { // CAS n °2 : Double clic : Distribution de croquinettes
-      DEBUG_PRINTLN("--- DOUBLE APPUIS DETECTE ---");
       feedCat(0); // Donner des croquinettes
     }
-    else if (clickCount == 1)
+    else if (clics == 3)
     {
-      // CAS n°3 : Simple clic : Affichage écran
-      DEBUG_PRINTLN("--- APPUIS COURT (SIMPLE CLIC) DETECTE ---");
-      displayScreen(DISPLAY_TIME_SEC); // Afficher les dernières croquettes et croquinettes servies
+      feedCat(1); //  Distribution dose normal de croquettes
     }
-    clickCount = 0; // Réinitialisation
+    break;
   }
-  // Stocke l'état pour la prochaine itération
-  lastButtonState = reading;
+
+  case BUTTON_NO_EVENT:
+    // Rien à faire
+    break;
+  }
   // --------- Inputs bouton (fin) --------- //
 
   manageDisplay(); // Loop Ecran OLED
@@ -386,7 +366,18 @@ void feedCat(boolean grossePortion)
 };
 // -------------------       FONCTIONS: Nourir le chat (fin)       ------------------- /
 
-// -------------------       FONCTIONS: Setup mémoire et WiFi (début)       ------------------- /
+// -------------------       FONCTIONS: Setup boutons, mémoire et WiFi (début)       ------------------- /
+void setupBoutons()
+{
+  // Initialiser le bouton
+  boutonTactile.begin();
+  // Configuration optionnelle des seuils (sinon valeurs par défaut)
+  boutonTactile.setDebounce(30);           // Anti rebond
+  boutonTactile.setShortPressMax(500);     // Appui court max
+  boutonTactile.setLongPressMin(2000);     // Appui long min
+  boutonTactile.setMultiClickTimeout(400); // Délai entre clics
+  boutonTactile.setMaxClickCount(3);       // Détection jusqu'au triple-clic
+}
 void getSavedSettings()
 {
   preferences.begin("croquinator", true);
@@ -525,12 +516,12 @@ void displayScreen(unsigned int displayTimeSec)
   convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
   convertSecondsFromMidnightToTime(prochainCroqSec, heureProchaineCroquettes);
 
-  // Serial.print("Maintenant sec : ");
-  // Serial.println(maintenantSec);
-  // Serial.print("Heure actuelle : ");
-  // Serial.println(heureActuelle);
-  // Serial.print("Date : ");
-  // Serial.println(dateBuffer);
+  // DEBUG_PRINT("Maintenant sec : ");
+  // DEBUG_PRINTLN(maintenantSec);
+  // DEBUG_PRINT("Heure actuelle : ");
+  // DEBUG_PRINTLN(heureActuelle);
+  // DEBUG_PRINT("Date : ");
+  // DEBUG_PRINTLN(dateBuffer);
 
   // Convertir en string
   char nombreDeCroquettes[3];   // Espace pour "00\0"
