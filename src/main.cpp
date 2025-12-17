@@ -2,19 +2,21 @@
 #include <Servo.h>          // Servomoteur
 #include "virtuabotixRTC.h" // RTC module 2
 #include <Preferences.h>    // Persistent memory
-#ifdef ESP32
-#include <WiFi.h>
-#else
-#include <ESP8266WiFi.h>
-#endif
 
 // --- INCLUSIONS PERSO ---
+#include <WiFiManager.h>
+#include <OTAManager.h>
 #include <OLEDDisplay.h>
 #include <InputBouton.h>
+#include "DashboardPage.h"
 #include "config.h" //  pins, constantes et variables globales
+#include "debug.h"
 #include "images.h" //  image de chat
+#include "secrets.h"
 
 // --- OBJETS GLOBAUX ---
+WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD, AP_HOSTNAME);
+OTAManager ota(OTA_HOSTNAME, OTA_PASSWORD, OTA_PORT);
 virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN); // RTC module 2
 Servo monServomoteur;                                                 // Servomoteur
 Preferences preferences;                                              // Persistent memory
@@ -23,6 +25,7 @@ InputBouton boutonTactile(BOUTON_PIN, LOW, INPUT);
 
 // -------------------           DECLARATION DES FONCTIONS (début)           ------------------- /                                                           // (setup) Connecte la mémoire persistante
 void setupWiFi();                                    // (setup) Connecte le wifi
+void setupWebRoutes();                               // (setup) Initialise les pages web
 void getSavedSettings();                             // (setup) Récupère la data de la mémoire persistante
 void setupBoutons();                                 // (setup) Initialise les paramètres boutons
 void setupScreen();                                  // (setup) Connecte l'écran OLED
@@ -45,18 +48,17 @@ void getRtcTime();                                                             /
 // -------------------                INITIALISATION (début)                ------------------- /
 void setup()
 {
-  DEBUG_INIT(9600);                                             // Initialisation de la communication filaire                                              // wait until Arduino Serial Monitor opens
-  DEBUG_PRINTLN(F("START " __FILE__ " from " __DATE__ "\r\n")); //  Just to know which program is running
+  DEBUG_INIT(SERIAL_BAUD_RATE);                                // Initialisation de la communication filaire                                              // wait until Arduino Serial Monitor opens
+  DEBUG_PRINTLN(F("START Croquinator from " __DATE__ "\r\n")); //  Just to know which program is running
 
-  setupScreen();                                               // Initialisation de l'écran OLED
-  getSavedSettings();                                          // Récupération de la mémoire persistante
-  setupWiFi();                                                 // Configuration du WiFi
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER); // NTP server config
-  printWiFiTime();                                             // Récupération de l'heure depuis le WiFi
-  syncRTCFromWiFi();                                           // Syncrhonisation de l'horloge interne
-  monServomoteur.attach(SERVO_PIN);                            // Configuration du Servomoteur
-  monServomoteur.write(ANGLE_FERMETURE);                       // S'assure que la valve est fermée au démarrage
-  setupBoutons();                                              // Configuration des boutons
+  setupScreen();                         // Initialisation de l'écran OLED
+  getSavedSettings();                    // Récupération de la mémoire persistante
+  setupWiFi();                           // Configuration du WiFi
+  printWiFiTime();                       // Récupération de l'heure depuis le WiFi
+  syncRTCFromWiFi();                     // Syncrhonisation de l'horloge interne
+  monServomoteur.attach(SERVO_PIN);      // Configuration du Servomoteur
+  monServomoteur.write(ANGLE_FERMETURE); // S'assure que la valve est fermée au démarrage
+  setupBoutons();                        // Configuration des boutons
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -64,10 +66,14 @@ void setup()
 void loop()
 {
   // DEBUG_PRINTLN("Début de la Boucle principale");
-  // getRtcTime();
+  // Appeler à chaque début de boucle
+  wifi.checkConnection();
+  wifi.handleClient();
+  ota.handle();
+  myRTC.updateTime(); // Always update time
+  oled.update();      // Loop Ecran OLED
 
   // --------- AutoCatFeed (début) --------- //
-  myRTC.updateTime();                          // Always update time
   maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
   dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs
   if (dansLaPlageHoraire == true)
@@ -145,8 +151,7 @@ void loop()
   }
   // --------- Inputs bouton (fin) --------- //
 
-  oled.update(); // Loop Ecran OLED
-  delay(1);      // Délais de fin de boucle
+  delay(1); // Délais de fin de boucle
 }
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
@@ -206,10 +211,10 @@ void optimiserDelayDistributionCroquettes()
   masseEngloutieParLeChatEnG = calculerMasseEngloutie();
   const long finDeLaPlageDansSec = ((HEURE_FIN_MIAM * 60 + MINUTE_FIN_MIAM) * 60) - maintenantSec;
   const int nombreDistributionCroquettesRestant = (RATION_QUOTIDIENNE_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
-  
+
   DEBUG_PRINT("Nombre de distributions restantes: ");
   DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
-  
+
   if (finDeLaPlageDansSec <= 0)
   {
     DEBUG_PRINTLN("Inutile, nous sommes en dehors de la plage horaire.");
@@ -399,31 +404,69 @@ void getSavedSettings()
 }
 void setupWiFi()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  // Initialiser WiFi
+  wifi.begin();
+  // wifi.setStateChangeCallback(onWiFiStateChange);
+  wifi.setConnectionTimeout(30000);
+  wifi.setMaxReconnectAttempts(5);
+
+  // Tenter la connexion
+  DEBUG_PRINT("Tentative de connexion WiFi...");
+  oled.printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
+  if (!wifi.connect())
   {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(SSID, PASSWORD);
-    DEBUG_PRINT("Connecting to WiFi ..");
-    oled.printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
-    while (WiFi.status() != WL_CONNECTED)
+    Serial.println("✗ Échec de connexion au WiFi principal");
+    Serial.println("→ Démarrage du mode Access Point de secours");
+    oled.printMessage("WiFi", "Echec de connexion au WiFi. Demarrage du mode Access Point...", DISPLAY_TIME_SEC);
+
+    // Démarrer en mode AP si échec de connexion
+    if (wifi.startAP(AP_SSID, AP_PASSWORD))
     {
-      DEBUG_PRINT('.');
-      delay(1000);
+      Serial.println("✓ Mode AP activé");
+      Serial.print("SSID: ");
+      Serial.println(AP_SSID);
+      Serial.print("IP: ");
+      Serial.println(WiFi.softAPIP());
+      oled.printMessage("WiFi", "Mode AP active.", DISPLAY_TIME_SEC);
     }
   }
   else
   {
     DEBUG_PRINTLN("WiFi connected.");
     oled.printMessage("WiFi", "WiFi connected.", DISPLAY_TIME_SEC);
+
+    // Activer NTP
+    wifi.enableNTP(NTP_SERVER, GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC);
+  }
+
+  // Démarrer le serveur web
+  if (wifi.startWebServer(80))
+  {
+    setupWebRoutes();
+    Serial.println("\n✓ Serveur web démarré");
+    oled.printMessage("WiFi", "Serveur web online.", DISPLAY_TIME_SEC);
+
+    if (wifi.isConnected())
+    {
+      Serial.print("URL: http://");
+      Serial.println(wifi.getIP());
+    }
+    else
+    {
+      Serial.print("URL AP: http://");
+      Serial.println(WiFi.softAPIP());
+    }
+  }
+
+  // Initialisation du Service OTA
+  if (!ota.begin())
+  {
+    Serial.println(F("[Erreur] OTA non initialisé"));
   }
 }
 int getWiFiSignalLevel()
 {
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    return 0; // Pas de connexion
-  }
-  long rssi = WiFi.RSSI();
+  int rssi = wifi.getRSSI();
   DEBUG_PRINT("Niveau du signal WiFi (dBm): ");
   DEBUG_PRINTLN(rssi);
   if (rssi > -55)
@@ -548,7 +591,7 @@ void syncRTCFromWiFi()
 
   DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
   oled.printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
-  setupWiFi();        // Vérifier que le WiFi est connecté
+
   struct tm timeinfo; //  Récupérer l'heure du WiFi
   if (getLocalTime(&timeinfo))
   {
@@ -634,3 +677,72 @@ void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer)
   sprintf(outBuffer, "%02dh%02d", h, m);
 }
 // -------------------       FONCTIONS: RTC et conversion de temps (fin)       ------------------- /
+
+// -------------------       WEBROUTES (debut)       ------------------- /
+void setupWebRoutes()
+{
+  // Pages par défaut (home /status et /info)
+  wifi.enableDefaultPages(true);
+
+  // Dashboard page
+  wifi.on("/dashboard", [](WebServerType &server)
+          { server.send(200, "text/html", DashboardPage::getHTML()); });
+
+  // API de données (Output pour l'UI)
+  wifi.on("/api/data", [](WebServerType &server)
+          {
+             //DEBUG_PRINTLN("[Web] Nouvelle requête : /api/data");
+
+             int dernieresCroquettesMin = (maintenantSec - lastFeedTimeCroquettes) / 60;
+             int dernieresCroquinettesMin = (maintenantSec - lastFeedTimeCroquinettes) / 60;
+             int prochainCroqMin = (lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC - maintenantSec) / 60;
+
+             String json = "{";
+             json += "\"nbCroquinettes\":" + String(compteurDeCroquinettes) + ",";
+             json += "\"nbCroquettes\":" + String(compteurDeCroquettes) + ",";
+             json += "\"hCroquettes\":" + String(dernieresCroquettesMin) + ",";
+             json += "\"hCroquinettes\":" + String(dernieresCroquinettesMin) + ",";
+             json += "\"hNextCroquettes\":" + String(prochainCroqMin) + ",";
+             json += "\"delay\":" + String(delayDistributionCroquettesSec / 60) + ",";
+             json += "\"mass\":" + String(masseEngloutieParLeChatEnG) + ",";
+             json += "\"ration\":" + String(RATION_QUOTIDIENNE_G) + ",";
+             json += "\"sys\":" + String(1);
+             json += "}";
+             // DEBUG_PRINTLN(json);
+             server.send(200, "application/json", json); });
+
+  //  API de commandes (Input depuis l'UI)
+  wifi.on("/setSys", [](WebServerType &server)
+          {
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /setSys");
+        int val = server.arg("v").toInt();
+        // Désactiver les distribution
+        server.send(200, "text/plain", "OK"); });
+  wifi.on("/feedCat", [](WebServerType &server)
+          {
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /feedCat");
+        int val = server.arg("v").toInt();
+        feedCat(val);
+        server.send(200, "text/plain", "OK"); });
+  wifi.on("/reset", [](WebServerType &server)
+          { 
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /reset");
+          reinitialiserCompteurs();
+          server.send(200, "text/plain", "OK"); });
+
+  // Scan des réseaux
+  wifi.on("/scan", [](WebServerType &server)
+          {
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /scan");
+            wifi.scanNetworks(); // 'wifi' doit être capturé ou global
+    server.send(200, "application/json", wifi.getScannedNetworkJSON()); });
+
+  // Redémarrer l'ESP
+  wifi.on("/restart", [](WebServerType &server)
+          {
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /restart");
+  server.send(200, "text/plain", "Redémarrage...");
+  delay(1000);
+  ESP.restart(); });
+}
+// -------------------       WEBROUTES (fin)       ------------------- /

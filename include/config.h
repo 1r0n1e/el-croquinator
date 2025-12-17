@@ -3,35 +3,7 @@
 
 #include <Arduino.h>
 
-// --- CONFIGURATION DEBUG ---
-#define DEBUG_ENABLED true // Mettre à false pour désactiver tout le debug
-// Définition des macros
-#if DEBUG_ENABLED
-#define DEBUG_PRINT(x)   \
-    if (Serial)          \
-    {                    \
-        Serial.print(x); \
-    }
-#define DEBUG_PRINTLN(x)   \
-    if (Serial)            \
-    {                      \
-        Serial.println(x); \
-    }
-#define DEBUG_INIT(speed)              \
-    Serial.begin(speed);               \
-    while (!Serial && millis() < 5000) \
-        ; // Wait max 5s
-#else
-// Si DEBUG est désactivé, ces lignes sont effacées du code compilé
-#define DEBUG_PRINT(x)
-#define DEBUG_PRINTLN(x)
-#define DEBUG_INIT(speed)
-#endif
-// ---------------------------
-
 // --- WIFI CONFIG ---
-const char *SSID = "La Parros";
-const char *PASSWORD = "LP48.100+";
 const char *NTP_SERVER = "pool.ntp.org";
 const long GMT_OFFSET_SEC = 3600;
 const int DAYLIGHT_OFFSET_SEC = 0;
@@ -39,8 +11,8 @@ const int DAYLIGHT_OFFSET_SEC = 0;
 // --- SERVOMOTEUR ---
 #define SERVO_PIN D3
 const int ANGLE_OUVERTURE = 180;       // Angle pour ouvrir la valve
-const int ANGLE_FERMETURE = 0;         // Angle pour fermer la valve
-const unsigned int CROQUINETTES = 111; // temps (ms) ouverture rapide
+const int ANGLE_FERMETURE = 60;        // Angle pour fermer la valve
+const unsigned int CROQUINETTES = 111; // temps  (ms) ouverture rapide
 const unsigned int CROQUETTES = 500;   // temps (ms) ouverture longue
 
 // --- RTC (DS1302) ---
