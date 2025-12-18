@@ -32,6 +32,7 @@ int calculerMasseEngloutie();
 void addHistoryPoint(unsigned long t, int m); // historique des distributions
 void reinitialiserCompteurs();                // Réinitialise les compteurs
 void feedCat(boolean grossePortion);          // Distribue les (0) Croquinettes || (1) Croquettes
+void calibrerDistributeur(int repetitions, int startTimeOpen, int endTimeOpen, int step);
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -47,6 +48,8 @@ void setup()
   monServomoteur.attach(SERVO_PIN);      // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE); // S'assure que la valve est fermée au démarrage
   setupBoutons();                        // Configuration des boutons
+
+  calibrerDistributeur(1, 100, 1000, 100);
 }
 // -------------------                INITIALISATION (fin)                ------------------- /
 
@@ -223,6 +226,33 @@ boolean detecterCroquettes()
     DEBUG_PRINTLN("Pas de croquetttes dans la gamelle");
     return false;
   }
+}
+void calibrerDistributeur(int repetitions, int startTimeOpen, int endTimeOpen, int step)
+{
+  DEBUG_PRINTLN("[FitCat] Calibration du distributeur");
+  autoMiamActivated = false;
+
+  for (int t = startTimeOpen; t <= endTimeOpen; t += step)
+  {
+    DEBUG_PRINTF("[Calibration] Temps d'ouverture %d ms %d répétitions - début dans 10sec..", t, repetitions);
+    char message[60];
+    sprintf(message, "Temps d'ouverture %d ms %d repetitions - debut dans 10sec..", t, repetitions);
+    oled.printMessage("Calibrer", message, 10);
+    delay(10 * 1000); // délais entre chaque temps d'ouverture
+    for (int i = 1; i <= repetitions; i++)
+    {
+      DEBUG_PRINTF(" %d..", i);
+      oled.printMessage("Calibrer", String(i), 1);
+      openValve(t);
+      delay(500); // délais entre chaque repetition
+    }
+    DEBUG_PRINTLN(" OK, mesurer masse totale !");
+    oled.printMessage("Calibrer", "OK, mesurer masse totale !", 10);
+    delay(10 * 1000);
+  }
+
+  DEBUG_PRINTLN("[FitCat] Calibration terminée");
+  oled.printMessage("Calibrer", "Calibration terminee", 10);
 }
 void openValve(unsigned int timeOpen)
 {

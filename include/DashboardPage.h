@@ -77,9 +77,19 @@ public:
                 <div class="stat"><div>Masse engloutie</div><div class="stat-val"><span id="mass">--</span>g</div></div>
                 <div class="stat"><div>Ration cible</div><div class="stat-val"><span id="ration">--</span>g</div></div>
             </div>
-        </div>  
+        </div>         
 
-       <div class="card">
+        <div class="card">
+            <h2>⏰ Temps de passage</h2>
+            <div class="grid">
+                <div class="stat"><div>Dernière distribution</div><div class="stat-val" id="hCroquettes">--</div></div>
+                <div class="stat"><div>Dernière croquinettes</div><div class="stat-val" id="hCroquinettes">--</div></div>
+                <div class="stat"><div>Prochaine distribution</div><div class="stat-val" id="hNextCroquettes">--</div></div>
+                <div class="stat"><div>Cycle actuel</div><div class="stat-val" id="delay">--</div></div>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>📈 Évolution de la ration</h2>
             <div class="chart-container" id="chartBox">
                 <svg id="feedingChart" viewBox="-10 -5 115 115" preserveAspectRatio="none" style="width:100%; height:100%; overflow: visible;">
@@ -89,16 +99,6 @@ public:
                     <path class="chart-area" id="chartArea" d=""></path>
                     <polyline class="chart-line" id="chartLine" points=""></polyline>
                 </svg>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>⏰ Temps de passage</h2>
-            <div class="grid">
-                <div class="stat"><div>Dernière distribution</div><div class="stat-val" id="hCroquettes">--</div></div>
-                <div class="stat"><div>Dernière croquinettes</div><div class="stat-val" id="hCroquinettes">--</div></div>
-                <div class="stat"><div>Prochaine distribution</div><div class="stat-val" id="hNextCroquettes">--</div></div>
-                <div class="stat"><div>Cycle actuel</div><div class="stat-val" id="delay">--</div></div>
             </div>
         </div>
 
