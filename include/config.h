@@ -72,4 +72,15 @@ const int RATION_CROQUETTES_G = 5;   // Ration croquettes (en g) par distributio
 const int RATION_CROQUINETTES_G = 1; // Ration croquinettes (en g) par distribution
 int masseEngloutieParLeChatEnG = 0;
 unsigned long delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
+
+// --- HISTORIQUE ---
+struct FeedingTime
+{
+    unsigned long timestamp; // Secondes depuis minuit
+    int cumulativeMass;      // Masse totale à cet instant
+};
+const int MAX_HISTORY_POINTS = 30; // Suffisant pour une journée
+FeedingTime feedingHistory[MAX_HISTORY_POINTS];
+int historySize = 0;
+
 #endif

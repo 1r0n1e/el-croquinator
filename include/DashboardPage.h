@@ -1,3 +1,5 @@
+// includes/DashboardPage.h
+
 #ifndef WEB_UI_H
 #define WEB_UI_H
 
@@ -44,17 +46,28 @@ public:
         input[type="time"] { border: 1px solid #ddd; border-radius: 5px; padding: 5px; font-family: inherit; }
         .time-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
 
-        /* Composant: Grid pour Sensors */
+        /* Composant: Grid pour Data */
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
         .stat { background: #f9f9f9; padding: 15px; border-radius: 10px; text-align: center; }
         .stat-val { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
+
+        /* Composant: Chart pour historique */
+        /* Grille et Axes du Chart */
+        .chart-container { 
+            width: 100%; height: 200px; background: #fff; 
+            position: relative; margin-top: 30px; margin-bottom: 20px;
+        }
+        .chart-line { fill: none; stroke: var(--primary); stroke-width: 3; stroke-linejoin: round; }
+        .chart-area { fill: rgba(33, 149, 243, 0.49); }
+        .grid-line { stroke: #eee; stroke-width: 1; stroke-dasharray: 4; }
+        .axis-text { font-size: 3px; fill: #888; font-weight: bold; }
 
     </style>
 </head>
 <body>
     <div class="container">
         <div class="card">
-        <h1>Programme Fit'Gazou 🐈</h1>        
+        <h1>Programme Fit'Gazou 🐈</h1>      
 
         <div class="card">
             <h2>📊 Compteurs</h2>
@@ -63,6 +76,19 @@ public:
                 <div class="stat"><div>Croquinettes</div><div class="stat-val" id="nbCroquinettes">--</div></div>
                 <div class="stat"><div>Masse engloutie</div><div class="stat-val"><span id="mass">--</span>g</div></div>
                 <div class="stat"><div>Ration cible</div><div class="stat-val"><span id="ration">--</span>g</div></div>
+            </div>
+        </div>  
+
+       <div class="card">
+            <h2>📈 Évolution de la ration</h2>
+            <div class="chart-container" id="chartBox">
+                <svg id="feedingChart" viewBox="-10 -5 115 115" preserveAspectRatio="none" style="width:100%; height:100%; overflow: visible;">
+                    <g id="chartGrid"></g>
+                    <line x1="0" y1="100" x2="100" y2="100" stroke="#ccc" stroke-width="0.5"/>
+                    <line x1="0" y1="0" x2="0" y2="100" stroke="#ccc" stroke-width="0.5"/>
+                    <path class="chart-area" id="chartArea" d=""></path>
+                    <polyline class="chart-line" id="chartLine" points=""></polyline>
+                </svg>
             </div>
         </div>
 
@@ -108,6 +134,7 @@ public:
     </div>
 
     <script>
+
         function sendCmd(path, val) { fetch(path + '?v=' + val); }
 
         function sendTime(type, val) {
@@ -116,17 +143,64 @@ public:
 
         function updateUI() {
             fetch('/api/data').then(r => r.json()).then(data => {
-            for (let key in data) {
-                    let el = document.getElementById(key);
-                    if (el) {
-                        if (el.type === 'checkbox') el.checked = data[key];
-                        else if (el.type === 'time') {
-                            // On ne met à jour l'input que s'il n'est pas en train d'être modifié
-                            if (document.activeElement !== el) el.value = data[key];
+                for (let key in data) {
+                        let el = document.getElementById(key);
+                        if (el) {
+                            if (el.type === 'checkbox') el.checked = data[key];
+                            else if (el.type === 'time') {
+                                // On ne met à jour l'input que s'il n'est pas en train d'être modifié
+                                if (document.activeElement !== el) el.value = data[key];
+                            }
+                            else el.innerText = data[key];
                         }
-                        else el.innerText = data[key];
+                    }
+                // --- LOGIQUE DU GRAPHIQUE ---
+                if (data.history && data.timeStart && data.timeEnd) {
+                    const rationMax = data.ration + 10 || 100;
+                    
+                    // Conversion des bornes temporelles en secondes
+                    const getSec = (t) => { let s = t.split(':'); return parseInt(s[0])*3600 + parseInt(s[1])*60; };
+                    const tStart = getSec(data.timeStart);
+                    const tEnd = getSec(data.timeEnd);
+                    const tRange = tEnd - tStart;
+
+                    // 1. Dessiner la grille
+                    let gridHTML = '';
+                    // Abscisses : Chaque heure
+                    let hStart = parseInt(data.timeStart.split(':')[0]);
+                    let hEnd = parseInt(data.timeEnd.split(':')[0]);
+                    for (let h = hStart; h <= hEnd; h++) {
+                        let x = ((h * 3600 - tStart) / tRange) * 100;
+                        if (x >= 0 && x <= 100) {
+                            gridHTML += `<line class="grid-line" x1="${x}" y1="0" x2="${x}" y2="100"></line>`;
+                            gridHTML += `<text class="axis-text" x="${x}" y="105" text-anchor="middle">${h}h</text>`;
+                        }
+                    }
+                    // Ordonnées : Graduations tous les 10g
+                    for (let g = 0; g <= rationMax; g += 10) {
+                        let y = 100 - (g / rationMax * 100);
+                        gridHTML += `<line class="grid-line" x1="0" y1="${y}" x2="100" y2="${y}"></line>`;
+                        gridHTML += `<text class="axis-text" x="-2" y="${y + 1}" text-anchor="end">${g}g</text>`;
+                    }
+                    document.getElementById('chartGrid').innerHTML = gridHTML;
+
+                    // 2. Calcul des points
+                    const pointsArray = data.history.map(p => {
+                        let x = ((p.t - tStart) / tRange) * 100;
+                        let y = 100 - (p.m / rationMax * 100);
+                        // On bride X entre 0 et 100 pour rester dans la plage de miam
+                        return { x: Math.max(0, Math.min(100, x)), y: y, m: p.m, t: p.t };
+                    });
+
+                    const pointsStr = pointsArray.map(p => `${p.x},${p.y}`).join(" ");
+                    document.getElementById('chartLine').setAttribute("points", pointsStr);
+                    
+                    if(pointsArray.length > 0) {
+                        const areaPath = `M 0,100 L ${pointsStr} L ${pointsArray[pointsArray.length-1].x},100 Z`;
+                        document.getElementById('chartArea').setAttribute("d", areaPath);
                     }
                 }
+                // --- FIN LOGIQUE DU GRAPHIQUE ---
             });
         }
         setInterval(updateUI, 1000);

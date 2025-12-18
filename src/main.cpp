@@ -29,8 +29,9 @@ boolean verifierRegime();
 boolean detecterCroquettes();          // Détecte la présence de croquette, retourne (0) abscence || (1) présence
 void openValve(unsigned int timeOpen); // Contrôle le servomoteur
 int calculerMasseEngloutie();
-void reinitialiserCompteurs();       // Réinitialise les compteurs
-void feedCat(boolean grossePortion); // Distribue les (0) Croquinettes || (1) Croquettes
+void addHistoryPoint(unsigned long t, int m); // historique des distributions
+void reinitialiserCompteurs();                // Réinitialise les compteurs
+void feedCat(boolean grossePortion);          // Distribue les (0) Croquinettes || (1) Croquettes
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -237,6 +238,14 @@ int calculerMasseEngloutie()
 {
   return compteurDeCroquettes * RATION_CROQUETTES_G + compteurDeCroquinettes * RATION_CROQUINETTES_G;
 };
+void addHistoryPoint(unsigned long time, int mass)
+{
+  if (historySize < MAX_HISTORY_POINTS)
+  {
+    feedingHistory[historySize] = {time, mass};
+    historySize++;
+  }
+}
 void optimiserDelayDistributionCroquettes()
 {
   DEBUG_PRINT("Optimisation de la prochaine distribution.. ");
@@ -273,6 +282,8 @@ void reinitialiserCompteurs()
   lastFeedTimeCroquettes = ((heureDebutMiam * 60 + minuteDebutMiam) * 60) - FEED_DELAY_CROQUETTES_SEC;
   lastFeedTimeCroquinettes = 0;
   delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
+  historySize = 0;                                    // Réinitialisation de l'historique
+  addHistoryPoint(myRTC.getSecondsFromMidnight(), 0); // Point de départ à 0g
 
   preferences.begin("croquinator", true);
   lastFeedTimeCroquettes = preferences.putULong("croquetteTime", lastFeedTimeCroquettes);
@@ -334,9 +345,10 @@ void feedCat(boolean grossePortion)
       openValve(CROQUETTES);                                   // Nourrir le chat avec une portion complète
       lastFeedTimeCroquettes = myRTC.getSecondsFromMidnight(); // Met à jour le dernier temps de nourrissage
       compteurDeCroquettes++;                                  // Mise à jour du compteur de croquettes
-      optimiserDelayDistributionCroquettes();
       DEBUG_PRINTLN("Reinitialisation du compteur d'absence.");
       compteurAbsenceChat = 0;
+      optimiserDelayDistributionCroquettes();
+      addHistoryPoint(myRTC.getSecondsFromMidnight(), calculerMasseEngloutie()); // historique
 
       // Sauvegarder dans la mémoire persistante
       preferences.begin("croquinator", false);
@@ -361,6 +373,7 @@ void feedCat(boolean grossePortion)
         lastFeedTimeCroquinettes = myRTC.getSecondsFromMidnight(); // Met à jour le dernier temps de gourmandise
         compteurDeCroquinettes++;                                  // Mise à jour du compteur de croquinettes
         optimiserDelayDistributionCroquettes();
+        addHistoryPoint(myRTC.getSecondsFromMidnight(), calculerMasseEngloutie()); // historique
 
         // Sauvegarder dans la mémoire persistante
         preferences.begin("croquinator", false);
@@ -667,12 +680,21 @@ void setupWebRoutes()
              doc["ration"] = RATION_QUOTIDIENNE_G;
              doc["autoMiam"] = autoMiamActivated;
 
-             // Formatage des heures pour les inputs (ex: "07:30")
+             // Formatage de la plage horaire pour les inputs (ex: "07:30")
              char timeBuf[6];
              sprintf(timeBuf, "%02d:%02d", heureDebutMiam, minuteDebutMiam);
              doc["timeStart"] = String(timeBuf);
              sprintf(timeBuf, "%02d:%02d", heureFinMiam, minuteFinMiam);
              doc["timeEnd"] = String(timeBuf);
+
+             // Ajout de l'historique au JSON
+             JsonArray hist = doc["history"].to<JsonArray>();
+             for (int i = 0; i < historySize; i++)
+             {
+               JsonObject point = hist.add<JsonObject>();
+               point["t"] = feedingHistory[i].timestamp;
+               point["m"] = feedingHistory[i].cumulativeMass;
+             }
 
              String output;
              serializeJson(doc, output);
