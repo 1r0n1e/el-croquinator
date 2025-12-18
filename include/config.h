@@ -1,7 +1,24 @@
+// inludes/config.h
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
 #include <Arduino.h>
+#include <Servo.h>       // Servomoteur
+#include <Preferences.h> // Persistent memory
+#include <ArduinoJson.h>
+
+// --- INCLUSIONS PERSO ---
+#include <WiFiManager.h>
+#include <OTAManager.h>
+#include <RTCManager.h>
+#include <OLEDDisplay.h>
+#include <InputBouton.h>
+#include "DashboardPage.h"
+
+#include "debug.h"
+#include "images.h" //  image de chat
+#include "secrets.h"
 
 // --- WIFI CONFIG ---
 const char *NTP_SERVER = "pool.ntp.org";
@@ -35,17 +52,16 @@ const int DISPLAY_TIME_SEC = 5; // Temps d'affichage en secondes
 
 // --- PARAMETRES TIMER ---
 // Définition de la plage horaire
-int HEURE_DEBUT_MIAM = 7;
-int MINUTE_DEBUT_MIAM = 30;
-int HEURE_FIN_MIAM = 23;
-int MINUTE_FIN_MIAM = 15;
-boolean dansLaPlageHoraire = true;                           // Activer ou désactiver la plage horaire de nourrissage
-const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux nourrissages (2 heures)
-const unsigned long FEED_DELAY_CROQUINETTES_SEC = 60;        // 30 * 60;   // Délai minimum entre deux nourrissages rapides (30 minutes)
+int heureDebutMiam = 7;
+int minuteDebutMiam = 30;
+int heureFinMiam = 23;
+int minuteFinMiam = 15;
+boolean autoMiamActivated = true;                            // Activer ou désactiver la distribution automatique
+const unsigned long FEED_DELAY_CROQUETTES_SEC = 2 * 60 * 60; // Délai minimum entre deux distributions (2 heures)
+const unsigned long FEED_DELAY_CROQUINETTES_SEC = 60;        // 30 * 60;   // Délai minimum entre deux distributions rapides (30 minutes)
 const unsigned long SNOOZE_DELAY_SEC = 30;                   // 30 * 60;              // Délai en cas de présence de croquettes (30 minutes)
 unsigned long lastFeedTimeCroquettes = 0;                    // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec des croquettes
 unsigned long lastFeedTimeCroquinettes = 0;                  // Dernier temps (en secondes depuis minuit) où le chat a été nourri avec quelques croquinettes
-unsigned long maintenantSec = 0;                             // heure actuelle (en secondes depuis minuit)
 unsigned int compteurAbsenceChat = 0;                        // Nombre de reports de distributions de croquettes
 unsigned int compteurDeCroquettes = 0;                       // Nombre de distributions de croquettes pour ce jour
 unsigned int compteurDeCroquinettes = 0;                     // Nombre de distributions de croquinettes pour ce jour

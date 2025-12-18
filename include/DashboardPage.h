@@ -25,10 +25,11 @@ public:
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
         .container { max-width: 600px; margin: 0 auto; }
         .card { background: var(--card-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1 { text-align: center; color: var(--primary); }
         h2 { margin-top: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 10px; }
         
         /* Composant: Bouton */ 
-        .button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; background: #4CAF50; color: white; text-decoration: none; display: inline-block; }
+        .button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; background: var(--primary); color: white; text-decoration: none; display: inline-block; }
         .button:hover { background: #45a049; }
 
         /* Composant: Switch */
@@ -38,6 +39,10 @@ public:
         .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--primary); }
         input:checked + .slider:before { transform: translateX(24px); }
+        
+        /* Composant: TimePicker */
+        input[type="time"] { border: 1px solid #ddd; border-radius: 5px; padding: 5px; font-family: inherit; }
+        .time-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
 
         /* Composant: Grid pour Sensors */
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
@@ -49,79 +54,82 @@ public:
 <body>
     <div class="container">
         <div class="card">
-            <h2>⚙️ Nourrir le chat</h2>
-
-            <div style="display:flex; justify-content: space-between; align-items:center;">
-                <span>Interrupteur</span>
-                <label class="switch">
-                    <input type="checkbox" id="sysCheck" onchange="sendCmd('/setSys', this.checked ? 1 : 0)">
-                    <span class="slider"></span>
-                </label>
-            </div> 
-
-            <p>
-                <a href="#" class="button" onclick="sendCmd('/feedCat', 0)">Croquinette</a>
-                <a href="#" class="button" onclick="sendCmd('/feedCat', 1)">Croquette</a>
-                <a href="#" class="button" onclick="sendCmd('/reset', 1)">Reset</a>
-            </p>
-
+        <h1>Programme Fit'Gazou 🐈</h1>        
 
         <div class="card">
             <h2>📊 Compteurs</h2>
             <div class="grid">
-                <div class="stat">
-                    <div>Croquettes</div>
-                    <div class="stat-val"><span id="nbCroquettes">--</span></div>
-                </div>
-                <div class="stat">
-                    <div>Croquinettes</div>
-                    <div class="stat-val"><span id="nbCroquinettes">--</span></div>
-                </div>
-                <div class="stat">
-                    <div>Dernières Croquettes</div>
-                    <div class="stat-val"><span id="hCroquettes">--</span>min</div>
-                </div>
-                <div class="stat">
-                    <div>Dernières Croquinettes</div>
-                    <div class="stat-val"><span id="hCroquinettes">--</span>min</div>
-                </div>
-                <div class="stat">
-                    <div>Prochaines Croquettes</div>
-                    <div class="stat-val"><span id="hNextCroquettes">--</span>min</div>
-                </div>
-                <div class="stat">
-                    <div>Délais de distribution</div>
-                    <div class="stat-val"><span id="delay">--</span>min</div>
-                </div>
-                <div class="stat">
-                    <div>Masse engloutie</div>
-                    <div class="stat-val"><span id="mass">--</span>g</div>
-                </div>
-                <div class="stat">
-                    <div>Ration idéale</div>
-                    <div class="stat-val"><span id="ration">--</span>g</div>
-                </div>
+                <div class="stat"><div>Croquettes</div><div class="stat-val" id="nbCroquettes">--</div></div>
+                <div class="stat"><div>Croquinettes</div><div class="stat-val" id="nbCroquinettes">--</div></div>
+                <div class="stat"><div>Masse engloutie</div><div class="stat-val"><span id="mass">--</span>g</div></div>
+                <div class="stat"><div>Ration cible</div><div class="stat-val"><span id="ration">--</span>g</div></div>
             </div>
         </div>
+
+        <div class="card">
+            <h2>⏰ Temps de passage</h2>
+            <div class="grid">
+                <div class="stat"><div>Dernière distribution</div><div class="stat-val" id="hCroquettes">--</div></div>
+                <div class="stat"><div>Dernière croquinettes</div><div class="stat-val" id="hCroquinettes">--</div></div>
+                <div class="stat"><div>Prochaine distribution</div><div class="stat-val" id="hNextCroquettes">--</div></div>
+                <div class="stat"><div>Cycle actuel</div><div class="stat-val" id="delay">--</div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⚙️ Paramètres & Contrôles</h2>
+
+            <p>
+                <a href="#" class="button" onclick="sendCmd('/feedCat', 0)">Croquinette</a>
+                <a href="#" class="button" onclick="sendCmd('/feedCat', 1)">Croquette</a>
+                <a href="#" class="button" onclick="if(confirm('Reset ?')) sendCmd('/reset', 1)">Reset</a>
+            </p>
+            
+            <hr>
+            
+            <div class="time-row">
+                <span>Distribution automatique</span>
+                <label class="switch">
+                    <input type="checkbox" id="autoMiam" onchange="sendCmd('/setAutomiam', this.checked ? 1 : 0)">
+                    <span class="slider"></span>
+                </label>
+            </div> 
+            <div class="time-row">
+                <span>Début de service</span>
+                <input type="time" id="timeStart" onchange="sendTime('start', this.value)">
+            </div>
+            <div class="time-row">
+                <span>Fin de service</span>
+                <input type="time" id="timeEnd" onchange="sendTime('end', this.value)">
+            </div>
+
+        </div>
+
     </div>
 
     <script>
         function sendCmd(path, val) { fetch(path + '?v=' + val); }
 
+        function sendTime(type, val) {
+            fetch('/setMiamTime?type=' + type + '&val=' + val);
+        }
+
         function updateUI() {
             fetch('/api/data').then(r => r.json()).then(data => {
-                document.getElementById('nbCroquettes').innerText = data.nbCroquettes;
-                document.getElementById('nbCroquinettes').innerText = data.nbCroquinettes;
-                document.getElementById('hCroquettes').innerText = data.hCroquettes;
-                document.getElementById('hCroquinettes').innerText = data.hCroquinettes;
-                document.getElementById('hNextCroquettes').innerText = data.hNextCroquettes;
-                document.getElementById('delay').innerText = data.delay;
-                document.getElementById('mass').innerText = data.mass;
-                document.getElementById('ration').innerText = data.ration;
-                document.getElementById('sysCheck').checked = data.sys; 
+            for (let key in data) {
+                    let el = document.getElementById(key);
+                    if (el) {
+                        if (el.type === 'checkbox') el.checked = data[key];
+                        else if (el.type === 'time') {
+                            // On ne met à jour l'input que s'il n'est pas en train d'être modifié
+                            if (document.activeElement !== el) el.value = data[key];
+                        }
+                        else el.innerText = data[key];
+                    }
+                }
             });
         }
-        setInterval(updateUI, 2000);
+        setInterval(updateUI, 1000);
         updateUI();
     </script>
 </body>

@@ -1,25 +1,13 @@
-#include <Arduino.h>
-#include <Servo.h>          // Servomoteur
-#include "virtuabotixRTC.h" // RTC module 2
-#include <Preferences.h>    // Persistent memory
+// src/main.cpp
 
-// --- INCLUSIONS PERSO ---
-#include <WiFiManager.h>
-#include <OTAManager.h>
-#include <OLEDDisplay.h>
-#include <InputBouton.h>
-#include "DashboardPage.h"
-#include "config.h" //  pins, constantes et variables globales
-#include "debug.h"
-#include "images.h" //  image de chat
-#include "secrets.h"
+#include "config.h" //  includes, pins, constantes et variables globales
 
 // --- OBJETS GLOBAUX ---
 WiFiManager wifi(WIFI_SSID, WIFI_PASSWORD, AP_HOSTNAME);
 OTAManager ota(OTA_HOSTNAME, OTA_PASSWORD, OTA_PORT);
-virtuabotixRTC myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN); // RTC module 2
-Servo monServomoteur;                                                 // Servomoteur
-Preferences preferences;                                              // Persistent memory
+RTCManager myRTC(DS1302_CLK_PIN, DS1302_DAT_PIN, DS1302_RST_PIN); // RTC module 2
+Servo monServomoteur;                                             // Servomoteur
+Preferences preferences;                                          // Persistent memory
 OLEDDisplay oled(SCREEN_WIDTH, SCREEN_HEIGHT, OLED_I2C_ADRESS);
 InputBouton boutonTactile(BOUTON_PIN, LOW, INPUT);
 
@@ -27,22 +15,22 @@ InputBouton boutonTactile(BOUTON_PIN, LOW, INPUT);
 void setupWiFi();                                    // (setup) Connecte le wifi
 void setupWebRoutes();                               // (setup) Initialise les pages web
 void getSavedSettings();                             // (setup) Récupère la data de la mémoire persistante
+void setupRtc();                                     // (setup) Initialise le module d'horloge
+boolean syncRTCFromWiFi();                           // Synchronise la date RTC avec la date WiFi
 void setupBoutons();                                 // (setup) Initialise les paramètres boutons
 void setupScreen();                                  // (setup) Connecte l'écran OLED
 void displayHomeScreen(unsigned int displayTimeSec); // Affiche l'écran de bord
 void displayInfoScreen(unsigned int displayTimeSec); // Affiche les compteurs
-void reinitialiserCompteurs();                       // Réinitialise les compteurs
-boolean verifierPlageHoraire();                      // Vérifie l'heure, retourne (0) en dehors || (1) dans la plage horaire
-int calculerMasseEngloutie();
+
+// Fonctions Pour nourrir le chat
+void setAutoMiam(bool isActivated);
+void setMiamTime(unsigned int h, unsigned int m, String type);
 boolean verifierRegime();
-boolean detecterCroquettes();                                                  // Détecte la présence de croquette, retourne (0) abscence || (1) présence
-void feedCat(boolean grossePortion);                                           // Distribue les (0) Croquinettes || (1) Croquettes
-void openValve(unsigned int timeOpen);                                         // Contrôle le servomoteur
-void syncRTCFromWiFi();                                                        // Synchronise la date RTC avec la date WiFi
-unsigned long getRtcSecondsFromMidnight();                                     // Retourne le nombre de secondes depuis minuit
-void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer); // Convertit des secondes en heure HH:MM (fournir le buffer de sortie)
-void printWiFiTime();                                                          // (debug) Imprime la date wifi
-void getRtcTime();                                                             // (debug) Imprime le temps RTC dans la console
+boolean detecterCroquettes();          // Détecte la présence de croquette, retourne (0) abscence || (1) présence
+void openValve(unsigned int timeOpen); // Contrôle le servomoteur
+int calculerMasseEngloutie();
+void reinitialiserCompteurs();       // Réinitialise les compteurs
+void feedCat(boolean grossePortion); // Distribue les (0) Croquinettes || (1) Croquettes
 // -------------------           DECLARATION DES FONCTIONS (fin)           ------------------- /
 
 // -------------------                INITIALISATION (début)                ------------------- /
@@ -54,8 +42,7 @@ void setup()
   setupScreen();                         // Initialisation de l'écran OLED
   getSavedSettings();                    // Récupération de la mémoire persistante
   setupWiFi();                           // Configuration du WiFi
-  printWiFiTime();                       // Récupération de l'heure depuis le WiFi
-  syncRTCFromWiFi();                     // Syncrhonisation de l'horloge interne
+  setupRtc();                            // Syncrhonisation de l'horloge interne
   monServomoteur.attach(SERVO_PIN);      // Configuration du Servomoteur
   monServomoteur.write(ANGLE_FERMETURE); // S'assure que la valve est fermée au démarrage
   setupBoutons();                        // Configuration des boutons
@@ -70,24 +57,31 @@ void loop()
   wifi.checkConnection();
   wifi.handleClient();
   ota.handle();
-  myRTC.updateTime(); // Always update time
-  oled.update();      // Loop Ecran OLED
+  myRTC.update(); // Always update time
+  oled.update();  // Loop Ecran OLED
 
   // --------- AutoCatFeed (début) --------- //
-  maintenantSec = getRtcSecondsFromMidnight(); // Vérifier l'heure
-  dansLaPlageHoraire = verifierPlageHoraire(); // Vérifie la plage horaire et réinitialise les compteurs
-  if (dansLaPlageHoraire == true)
+  // Vérifier la plage horaire toutes les secondes
+  static unsigned long lastCheck = 0;
+  if (autoMiamActivated && millis() - lastCheck > 1000)
   {
-    // DEBUG_PRINTLN(maintenantSec);
-    //  Si le chat est affamé : Verifier le délai depuis le dernier croq
-    long deltaSecondes = maintenantSec - lastFeedTimeCroquettes; // interval de temps
-    const unsigned long delay = delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC;
-    // char message[56];
-    // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedTimeCroquettes, deltaSecondes, delay);
-    // DEBUG_PRINTLN(message);
-    if (deltaSecondes > 0 && (unsigned int)deltaSecondes >= delay) // Si le délai de 2H est écoulé
+    lastCheck = millis();
+    // Vérifier plage horaire
+    const bool dansLaPlageHoraire = myRTC.isInTimeRange(heureDebutMiam, minuteDebutMiam,
+                                                        heureFinMiam, minuteFinMiam);
+    if (dansLaPlageHoraire)
     {
-      feedCat(1); // Donner des croquettes
+      // Serial.print("✓ Dans plage nourrissage");
+      // Verifier le délai depuis le dernier croq
+      long deltaSecondes = myRTC.getSecondsFromMidnight() - lastFeedTimeCroquettes; // interval de temps
+      const unsigned long delay = delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC;
+      // char message[56];
+      // sprintf(message, "Maintenant: %d s - lastFeed: %d s - delta: %d s - delay: %d s", maintenantSec, lastFeedTimeCroquettes, deltaSecondes, delay);
+      // DEBUG_PRINTLN(message);
+      if (deltaSecondes > 0 && (unsigned int)deltaSecondes >= delay) // Si le délai de 2H est écoulé
+      {
+        feedCat(1); // Donner des croquettes
+      }
     }
   }
   // --------- AutoCatFeed (fin) --------- //
@@ -156,80 +150,47 @@ void loop()
 // -------------------                BOUCLE LOOP (fin)                ------------------- /
 
 // -------------------       FONCTIONS: Nourir le chat (début)       ------------------- /
-void reinitialiserCompteurs()
+void setAutoMiam(bool isActivated)
 {
-  DEBUG_PRINTLN("Reinitialisation des compteurs.");
-  compteurDeCroquettes = 0;
-  compteurDeCroquinettes = 0;
-  compteurAbsenceChat = 0;
-  lastFeedTimeCroquettes = ((HEURE_DEBUT_MIAM * 60 + MINUTE_DEBUT_MIAM) * 60) - FEED_DELAY_CROQUETTES_SEC;
-  lastFeedTimeCroquinettes = 0;
-  delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
-
-  preferences.begin("croquinator", true);
-  lastFeedTimeCroquettes = preferences.putULong("croquetteTime", lastFeedTimeCroquettes);
-  lastFeedTimeCroquinettes = preferences.putULong("croquinetteTime", lastFeedTimeCroquinettes);
-  compteurDeCroquettes = preferences.putUInt("compteurCroquette", compteurDeCroquettes);
-  compteurDeCroquinettes = preferences.putUInt("compteurCroquinette", compteurDeCroquinettes);
+  if (isActivated == false)
+  {
+    autoMiamActivated = false;
+    DEBUG_PRINTLN("[FitCat] Auto-miam désactivé");
+    oled.printMessage("FitCat", "Desactivation de l'Auto-miam.", DISPLAY_TIME_SEC);
+  }
+  else
+  {
+    autoMiamActivated = true;
+    DEBUG_PRINTLN("[FitCat] Auto-miam activé");
+    oled.printMessage("FitCat", "Activation de l'Auto-miam.", DISPLAY_TIME_SEC);
+  }
+  // Sauvegarder dans la mémoire persistante
+  preferences.begin("croquinator", false);
+  preferences.putBool("autoMiam", autoMiamActivated);
   preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
-
-  DEBUG_PRINTLN("Compteurs reinitialises.");
-  oled.printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
 }
-boolean verifierPlageHoraire()
+void setMiamTime(unsigned int h, unsigned int m, String type)
 {
-  myRTC.updateTime();
-  int h = myRTC.hours;
-  int m = myRTC.minutes;
-  int s = myRTC.seconds;
-  // Tout les jours à minuit
-  if (h == 0 && m == 0 && s == 0)
+  DEBUG_PRINTLN("[FitCat] Paramétrage de la plage horaire..");
+  preferences.begin("croquinator", false);
+  if (type == "start")
   {
-    syncRTCFromWiFi(); // Resynchroniser l'horloge
-    reinitialiserCompteurs();
+    heureDebutMiam = h;
+    minuteDebutMiam = m;
+    preferences.putUInt("heureDebutMiam", heureDebutMiam);
+    preferences.putUInt("minuteDebutMiam", minuteDebutMiam);
+    DEBUG_PRINTF("[FitCat] Nouveau début : %02dh%02d\n", h, m);
   }
-  // Vérifier la plage horaire
-  if ((h > HEURE_DEBUT_MIAM || (h == HEURE_DEBUT_MIAM && m >= MINUTE_DEBUT_MIAM)) &&
-      (h < HEURE_FIN_MIAM || (h == HEURE_FIN_MIAM && m <= MINUTE_FIN_MIAM)))
+  else if (type == "end")
   {
-    // DEBUG_PRINTLN("Dans la plage horaire de nourrissage.");
-    return true; // Nous somme dans la plage horaire
+    heureFinMiam = h;
+    minuteFinMiam = m;
+    preferences.putUInt("heureFinMiam", heureFinMiam);
+    preferences.putUInt("minuteFinMiam", minuteFinMiam);
+    DEBUG_PRINTF("[FitCat] Nouvelle fin : %02dh%02d\n", h, m);
   }
-  else
-  { // Nous ne somme pas dans la plage horaire
-    // DEBUG_PRINTLN("En dehors de la plage horaire de nourrissage.");
-    return false;
-  }
-}
-int calculerMasseEngloutie()
-{
-  return compteurDeCroquettes * RATION_CROQUETTES_G + compteurDeCroquinettes * RATION_CROQUINETTES_G;
-};
-void optimiserDelayDistributionCroquettes()
-{
-  DEBUG_PRINT("Optimisation de la prochaine distribution.. ");
-  masseEngloutieParLeChatEnG = calculerMasseEngloutie();
-  const long finDeLaPlageDansSec = ((HEURE_FIN_MIAM * 60 + MINUTE_FIN_MIAM) * 60) - maintenantSec;
-  const int nombreDistributionCroquettesRestant = (RATION_QUOTIDIENNE_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
-
-  DEBUG_PRINT("Nombre de distributions restantes: ");
-  DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
-
-  if (finDeLaPlageDansSec <= 0)
-  {
-    DEBUG_PRINTLN("Inutile, nous sommes en dehors de la plage horaire.");
-  }
-  else if (nombreDistributionCroquettesRestant <= 0)
-  {
-    DEBUG_PRINTLN("Inutile, toutes les croquettes ont été distribuées.");
-  }
-  else
-  {
-    delayDistributionCroquettesSec = finDeLaPlageDansSec / nombreDistributionCroquettesRestant;
-    DEBUG_PRINTLN("Délai de distribution des croquettes ajusté");
-    DEBUG_PRINT("Nouveau délai (min): ");
-    DEBUG_PRINTLN(delayDistributionCroquettesSec / 60);
-  }
+  preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
+  oled.printMessage("FitCat", "Plage horaire mise à jour.", DISPLAY_TIME_SEC);
 }
 boolean verifierRegime()
 {
@@ -271,6 +232,57 @@ void openValve(unsigned int timeOpen)
   monServomoteur.write(ANGLE_OUVERTURE); // Ouvre
   delay(timeOpen);                       // Attend 0,5 seconde pour laisser tomber la portion
   monServomoteur.write(ANGLE_FERMETURE); // Ferme
+}
+int calculerMasseEngloutie()
+{
+  return compteurDeCroquettes * RATION_CROQUETTES_G + compteurDeCroquinettes * RATION_CROQUINETTES_G;
+};
+void optimiserDelayDistributionCroquettes()
+{
+  DEBUG_PRINT("Optimisation de la prochaine distribution.. ");
+  masseEngloutieParLeChatEnG = calculerMasseEngloutie();
+  const long finDeLaPlageDansSec = ((heureFinMiam * 60 + minuteFinMiam) * 60) - myRTC.getSecondsFromMidnight();
+  const int nombreDistributionCroquettesRestant = (RATION_QUOTIDIENNE_G - masseEngloutieParLeChatEnG) / RATION_CROQUETTES_G;
+
+  DEBUG_PRINT("Nombre de distributions restantes: ");
+  DEBUG_PRINTLN(nombreDistributionCroquettesRestant);
+
+  if (finDeLaPlageDansSec <= 0)
+  {
+    DEBUG_PRINTLN("Inutile, nous sommes en dehors de la plage horaire.");
+  }
+  else if (nombreDistributionCroquettesRestant <= 0)
+  {
+    DEBUG_PRINTLN("Inutile, toutes les croquettes ont été distribuées.");
+  }
+  else
+  {
+    delayDistributionCroquettesSec = finDeLaPlageDansSec / nombreDistributionCroquettesRestant;
+    DEBUG_PRINTLN("Délai de distribution des croquettes ajusté");
+    DEBUG_PRINT("Nouveau délai (min): ");
+    DEBUG_PRINTLN(delayDistributionCroquettesSec / 60);
+  }
+}
+
+void reinitialiserCompteurs()
+{
+  DEBUG_PRINTLN("Reinitialisation des compteurs.");
+  compteurDeCroquettes = 0;
+  compteurDeCroquinettes = 0;
+  compteurAbsenceChat = 0;
+  lastFeedTimeCroquettes = ((heureDebutMiam * 60 + minuteDebutMiam) * 60) - FEED_DELAY_CROQUETTES_SEC;
+  lastFeedTimeCroquinettes = 0;
+  delayDistributionCroquettesSec = FEED_DELAY_CROQUETTES_SEC;
+
+  preferences.begin("croquinator", true);
+  lastFeedTimeCroquettes = preferences.putULong("croquetteTime", lastFeedTimeCroquettes);
+  lastFeedTimeCroquinettes = preferences.putULong("croquinetteTime", lastFeedTimeCroquinettes);
+  compteurDeCroquettes = preferences.putUInt("compteurCroquette", compteurDeCroquettes);
+  compteurDeCroquinettes = preferences.putUInt("compteurCroquinette", compteurDeCroquinettes);
+  preferences.end(); // Ferme l'accès à la mémoire. C'est CRUCIAL.
+
+  DEBUG_PRINTLN("Compteurs reinitialises.");
+  oled.printMessage("Compteurs", "Reinitialisation des compteurs.", DISPLAY_TIME_SEC);
 }
 /* Fonction pour nourrir le chat
 Vérifie la présence de croquettes et les distribue
@@ -319,9 +331,9 @@ void feedCat(boolean grossePortion)
     if (grossePortion == true)
     {
       DEBUG_PRINTLN(" des croquettes.");
-      openValve(CROQUETTES);                  // Nourrir le chat avec une portion complète
-      lastFeedTimeCroquettes = maintenantSec; // Met à jour le dernier temps de nourrissage
-      compteurDeCroquettes++;                 // Mise à jour du compteur de croquettes
+      openValve(CROQUETTES);                                   // Nourrir le chat avec une portion complète
+      lastFeedTimeCroquettes = myRTC.getSecondsFromMidnight(); // Met à jour le dernier temps de nourrissage
+      compteurDeCroquettes++;                                  // Mise à jour du compteur de croquettes
       optimiserDelayDistributionCroquettes();
       DEBUG_PRINTLN("Reinitialisation du compteur d'absence.");
       compteurAbsenceChat = 0;
@@ -341,13 +353,13 @@ void feedCat(boolean grossePortion)
     {
       DEBUG_PRINTLN(" des croquinettes.");
       // Vérifier que le delay des croquinettes est dépassé
-      unsigned long deltaSecondes = maintenantSec - lastFeedTimeCroquinettes; // interval de temps
-      if (deltaSecondes >= FEED_DELAY_CROQUINETTES_SEC)                       // Si le délai de 30 min est écoulé
+      unsigned long deltaSecondes = myRTC.getSecondsFromMidnight() - lastFeedTimeCroquinettes; // interval de temps
+      if (deltaSecondes >= FEED_DELAY_CROQUINETTES_SEC)                                        // Si le délai de 30 min est écoulé
       {
         DEBUG_PRINTLN("Délai écoulé, on peut donner une gourmandise/croquinette");
-        openValve(CROQUINETTES);                  // Nourrir le chat avec quelques croquettes
-        lastFeedTimeCroquinettes = maintenantSec; // Met à jour le dernier temps de gourmandise
-        compteurDeCroquinettes++;                 // Mise à jour du compteur de croquinettes
+        openValve(CROQUINETTES);                                   // Nourrir le chat avec quelques croquettes
+        lastFeedTimeCroquinettes = myRTC.getSecondsFromMidnight(); // Met à jour le dernier temps de gourmandise
+        compteurDeCroquinettes++;                                  // Mise à jour du compteur de croquinettes
         optimiserDelayDistributionCroquettes();
 
         // Sauvegarder dans la mémoire persistante
@@ -388,6 +400,11 @@ void setupBoutons()
 void getSavedSettings()
 {
   preferences.begin("croquinator", true);
+  autoMiamActivated = preferences.getBool("autoMiam", autoMiamActivated);
+  heureDebutMiam = preferences.getUInt("heureDebutMiam", heureDebutMiam);
+  minuteDebutMiam = preferences.getUInt("minuteDebutMiam", minuteDebutMiam);
+  heureFinMiam = preferences.getUInt("heureFinMiam", heureFinMiam);
+  minuteFinMiam = preferences.getUInt("minuteFinMiam", minuteFinMiam);
   lastFeedTimeCroquettes = preferences.getULong("croquetteTime", 0);     // 0 par défaut
   lastFeedTimeCroquinettes = preferences.getULong("croquinetteTime", 0); // 0 par défaut
   compteurDeCroquettes = preferences.getUInt("compteurCroquette", 0);
@@ -415,18 +432,18 @@ void setupWiFi()
   oled.printMessage("WiFi", "Connexion au WiFi...", DISPLAY_TIME_SEC);
   if (!wifi.connect())
   {
-    Serial.println("✗ Échec de connexion au WiFi principal");
-    Serial.println("→ Démarrage du mode Access Point de secours");
+    DEBUG_PRINTLN("✗ Échec de connexion au WiFi principal");
+    DEBUG_PRINTLN("→ Démarrage du mode Access Point de secours");
     oled.printMessage("WiFi", "Echec de connexion au WiFi. Demarrage du mode Access Point...", DISPLAY_TIME_SEC);
 
     // Démarrer en mode AP si échec de connexion
     if (wifi.startAP(AP_SSID, AP_PASSWORD))
     {
-      Serial.println("✓ Mode AP activé");
-      Serial.print("SSID: ");
-      Serial.println(AP_SSID);
-      Serial.print("IP: ");
-      Serial.println(WiFi.softAPIP());
+      DEBUG_PRINTLN("✓ Mode AP activé");
+      DEBUG_PRINT("SSID: ");
+      DEBUG_PRINTLN(AP_SSID);
+      DEBUG_PRINT("IP: ");
+      DEBUG_PRINTLN(WiFi.softAPIP());
       oled.printMessage("WiFi", "Mode AP active.", DISPLAY_TIME_SEC);
     }
   }
@@ -443,25 +460,25 @@ void setupWiFi()
   if (wifi.startWebServer(80))
   {
     setupWebRoutes();
-    Serial.println("\n✓ Serveur web démarré");
+    DEBUG_PRINTLN("\n✓ Serveur web démarré");
     oled.printMessage("WiFi", "Serveur web online.", DISPLAY_TIME_SEC);
 
     if (wifi.isConnected())
     {
-      Serial.print("URL: http://");
-      Serial.println(wifi.getIP());
+      DEBUG_PRINT("URL: http://");
+      DEBUG_PRINTLN(wifi.getIP());
     }
     else
     {
-      Serial.print("URL AP: http://");
-      Serial.println(WiFi.softAPIP());
+      DEBUG_PRINT("URL AP: http://");
+      DEBUG_PRINTLN(WiFi.softAPIP());
     }
   }
 
   // Initialisation du Service OTA
   if (!ota.begin())
   {
-    Serial.println(F("[Erreur] OTA non initialisé"));
+    DEBUG_PRINTLN(F("[Erreur] OTA non initialisé"));
   }
 }
 int getWiFiSignalLevel()
@@ -490,21 +507,6 @@ int getWiFiSignalLevel()
     return 0; // Très faible/Inutilisable
   }
 }
-void printWiFiTime() // (debug) Imprimer la date du WiFi
-{
-  DEBUG_PRINTLN("Récupération de la date depuis le wifi...");
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo))
-  {
-    DEBUG_PRINTLN("Failed to obtain time");
-  }
-  // Convert to string
-  char timeStr[19];
-  strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", &timeinfo);
-  // strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-  DEBUG_PRINT("Date actuelle: ");
-  DEBUG_PRINTLN(timeStr);
-}
 // -------------------       FONCTIONS: Setup mémoire et WiFi (fin)       ------------------- /
 
 // -------------------       FONCTIONS: Ecran OLED (début)       ------------------- /
@@ -532,19 +534,17 @@ void displayHomeScreen(unsigned int displayTimeSec)
   oled.clear();
 
   // En-tête avec indicateur de WiFi
-  oled.printDate(myRTC.dayofmonth, myRTC.month, myRTC.year, ALIGN_LEFT, 0);
+  oled.printDate(myRTC.getDayOfMonth(), myRTC.getMonth(), myRTC.getYear(), ALIGN_LEFT, 0);
   const int wifiSignal = getWiFiSignalLevel();
   oled.drawWifiSignal(115, 0, wifiSignal);
 
   // Heure actuelle
-  oled.printTime(myRTC.hours, myRTC.minutes, ALIGN_CENTER, 17, 2);
+  oled.printTime(myRTC.getHour(), myRTC.getMinute(), ALIGN_CENTER, 17, 2);
 
   // Prochaine distribution
   int prochainCroqSec = (lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC);
-  char heureCroquettes[6];
-  convertSecondsFromMidnightToTime(prochainCroqSec, heureCroquettes);
   oled.printTextAligned("Prochain croq:", ALIGN_LEFT, 40);
-  oled.printTextAligned(heureCroquettes, ALIGN_RIGHT, 40);
+  oled.printTextAligned(myRTC.formatSecondsToTime(prochainCroqSec, false), ALIGN_RIGHT, 40);
 
   // Barre de progression
   const float progress = masseEngloutieParLeChatEnG * 100 / RATION_QUOTIDIENNE_G;
@@ -559,10 +559,6 @@ void displayHomeScreen(unsigned int displayTimeSec)
 void displayInfoScreen(unsigned int displayTimeSec)
 {
   const int wifiSignal = getWiFiSignalLevel();
-  char heureCroquettes[6];
-  char heureCroquinettes[6];
-  convertSecondsFromMidnightToTime(lastFeedTimeCroquettes, heureCroquettes);
-  convertSecondsFromMidnightToTime(lastFeedTimeCroquinettes, heureCroquinettes);
 
   oled.clear();
 
@@ -572,12 +568,12 @@ void displayInfoScreen(unsigned int displayTimeSec)
 
   oled.printTextAligned("Croquettes", ALIGN_LEFT, 20);
   oled.printValue(" - ", compteurDeCroquettes, 0, "", 30);
-  oled.printTextAligned(heureCroquettes, ALIGN_RIGHT, 30);
+  oled.printTextAligned(myRTC.formatSecondsToTime(lastFeedTimeCroquettes, false), ALIGN_RIGHT, 30);
   // oled.printTime(8, 21, ALIGN_RIGHT, 26, 1);
 
   oled.printTextAligned("Croquinettes", ALIGN_LEFT, 46);
   oled.printValue(" - ", compteurDeCroquinettes, 0, "", 56);
-  oled.printTextAligned(heureCroquinettes, ALIGN_RIGHT, 56);
+  oled.printTextAligned(myRTC.formatSecondsToTime(lastFeedTimeCroquinettes, false), ALIGN_RIGHT, 56);
   // oled.printTime(8, 17, ALIGN_RIGHT, 56, 1);
 
   oled.refresh();
@@ -585,98 +581,60 @@ void displayInfoScreen(unsigned int displayTimeSec)
 }
 // -------------------       FONCTIONS: Ecran OLED (fin)      ------------------- /
 
-// -------------------       FONCTIONS: RTC et conversion de temps (début)       ------------------- /
-void syncRTCFromWiFi()
+// -------------------       FONCTIONS: RTC (début)       ------------------- /
+void setupRtc()
 {
+  // Initialiser le RTC
+  myRTC.begin();
+  myRTC.setDebugMode(DEBUG_MODE);
 
-  DEBUG_PRINTLN("Synchronisation de l'horloge RTC avec le WiFi..");
+  //  Configurer la date
+  // myRTC.setDateTime(0, 54, 22, 4, 11, 12, 2025);
+  syncRTCFromWiFi();
+
+  // Afficher l'heure actuelle
+  DEBUG_PRINTLN(F("\n--- Heure actuelle ---"));
+  myRTC.printDateTime();
+
+  // ==================== ALARMES ====================
+  DEBUG_PRINTLN(F("\n--- Configuration des alarmes ---"));
+  // Alarme à 8h00
+  // myRTC.addAlarm(8, 0, []()
+  //              { DEBUG_PRINTLN(F("🔔 Alarme 8h00 : Début de journée !")); });
+
+  // ==================== CALLBACK MINUIT ====================
+  myRTC.setMidnightCallback([]()
+                            {
+                             DEBUG_PRINTLN(F("\n⏰ MINUIT - Nouveau jour !"));
+                            // Resynchroniser avec NTP si WiFi disponible
+                             syncRTCFromWiFi();
+                                 reinitialiserCompteurs(); });
+
+  DEBUG_PRINTLN(F("✓ Alarmes configurées\n"));
+  DEBUG_PRINTLN(F("\n=== Système prêt ===\n"));
+}
+boolean syncRTCFromWiFi()
+{
   oled.printMessage("Horloge", "Synchronisation de l'horloge RTC avec le WiFi..", DISPLAY_TIME_SEC);
-
-  struct tm timeinfo; //  Récupérer l'heure du WiFi
-  if (getLocalTime(&timeinfo))
+  const bool isSync = myRTC.syncFromNTP(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC);
+  if (myRTC.getYear() == 2000)
   {
-    // Transférer les données de la structure tm au RTC
-    // La structure tm utilise 1900 comme année de base (tm_year est l'année - 1900).
-    // Elle utilise 0-11 pour les mois (tm_mon) et 0-6 pour les jours de la semaine (tm_wday).
-    myRTC.setDS1302Time(
-        timeinfo.tm_sec,        // secondes (0-59)
-        timeinfo.tm_min,        // minutes (0-59)
-        timeinfo.tm_hour,       // heures (0-23)
-        timeinfo.tm_wday,       // jour de la semaine (0=dimanche, 6=samedi)
-        timeinfo.tm_mday,       // jour du mois (1-31)
-        timeinfo.tm_mon + 1,    // mois (0-11) -> on ajoute 1 pour obtenir 1-12
-        timeinfo.tm_year + 1900 // année (depuis 1900)
-    );
-    getRtcTime();
-    if (myRTC.year == 2000)
-    {
-      DEBUG_PRINTLN("Synchronisation RTC échouée, vérifier la batterie ou le branchement.");
-      oled.printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 15 * 60);
-      // Ressayer toutes les 15min
-      delay(15 * 60 * 1000);
-      syncRTCFromWiFi();
-    }
-    else
-    {
-      DEBUG_PRINT("WiFi: Date / Heure: ");
-      DEBUG_PRINT(timeinfo.tm_mday);
-      DEBUG_PRINT("/");
-      DEBUG_PRINT(timeinfo.tm_mon + 1);
-      DEBUG_PRINT("/");
-      DEBUG_PRINT(timeinfo.tm_year + 1900);
-      DEBUG_PRINT(" ");
-      DEBUG_PRINT(timeinfo.tm_hour);
-      DEBUG_PRINT(":");
-      DEBUG_PRINT(timeinfo.tm_min);
-      DEBUG_PRINT(":");
-      DEBUG_PRINTLN(timeinfo.tm_sec);
-      DEBUG_PRINTLN("Synchronisation RTC réussie.");
-      oled.printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
-    }
+    DEBUG_PRINTLN("Synchronisation RTC échouée, vérifier la batterie ou le branchement.");
+    oled.printMessage("Horloge", "Echec de synchronisation de l'heure RTC, verifier la batterie ou le branchement.", 15 * 60);
+    return false;
+  }
+  if (isSync)
+  {
+    oled.printMessage("Horloge", "Synchronisation de l'heure reussie", DISPLAY_TIME_SEC);
+    return true;
   }
   else
   {
-    DEBUG_PRINTLN("Synchronisation RTC échouée car l'heure WiFi n'a pas pu être récupérée.");
     oled.printMessage("Horloge", "Synchronisation RTC echouee car l'heure WiFi n'a pas pu etre recuperee.", DISPLAY_TIME_SEC);
+    return false;
   }
 }
-void getRtcTime()
-{
-  myRTC.updateTime();
-  DEBUG_PRINT("RTC : Date / Heure: ");
-  DEBUG_PRINT(myRTC.dayofmonth);
-  DEBUG_PRINT("/");
-  DEBUG_PRINT(myRTC.month);
-  DEBUG_PRINT("/");
-  DEBUG_PRINT(myRTC.year);
-  DEBUG_PRINT(" ");
-  DEBUG_PRINT(myRTC.hours);
-  DEBUG_PRINT(":");
-  DEBUG_PRINT(myRTC.minutes);
-  DEBUG_PRINT(":");
-  DEBUG_PRINTLN(myRTC.seconds);
-}
-unsigned long getRtcSecondsFromMidnight()
-{
-  myRTC.updateTime();
-  unsigned long totalSeconds = myRTC.hours * 3600 + myRTC.minutes * 60 + myRTC.seconds;
-  return totalSeconds;
-}
-void convertSecondsFromMidnightToTime(unsigned long seconds, char *outBuffer)
-{
-  // --- CONVERSION DE SEC EN HH:MM ---
-  // On s'assure que la valeur reste dans les limites de 24h (86400 secondes)
-
-  long totalSec = seconds % 86400;
-  if (totalSec < 0)
-    totalSec += 86400; // Gestion si le temps est négatif
-
-  int h = totalSec / 3600;
-  int m = (totalSec % 3600) / 60;
-
-  sprintf(outBuffer, "%02dh%02d", h, m);
-}
-// -------------------       FONCTIONS: RTC et conversion de temps (fin)       ------------------- /
+// -------------------       FONCTIONS: RTC (fin)       ------------------- /
 
 // -------------------       WEBROUTES (debut)       ------------------- /
 void setupWebRoutes()
@@ -693,31 +651,42 @@ void setupWebRoutes()
           {
              //DEBUG_PRINTLN("[Web] Nouvelle requête : /api/data");
 
-             int dernieresCroquettesMin = (maintenantSec - lastFeedTimeCroquettes) / 60;
-             int dernieresCroquinettesMin = (maintenantSec - lastFeedTimeCroquinettes) / 60;
-             int prochainCroqMin = (lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC - maintenantSec) / 60;
+             const unsigned long maintenantSec = myRTC.getSecondsFromMidnight();
+             int dernieresCroquettes = maintenantSec - lastFeedTimeCroquettes;
+             int dernieresCroquinettes = (maintenantSec - lastFeedTimeCroquinettes);
+             int prochainCroq = (lastFeedTimeCroquettes + delayDistributionCroquettesSec + compteurAbsenceChat * SNOOZE_DELAY_SEC - maintenantSec);
 
-             String json = "{";
-             json += "\"nbCroquinettes\":" + String(compteurDeCroquinettes) + ",";
-             json += "\"nbCroquettes\":" + String(compteurDeCroquettes) + ",";
-             json += "\"hCroquettes\":" + String(dernieresCroquettesMin) + ",";
-             json += "\"hCroquinettes\":" + String(dernieresCroquinettesMin) + ",";
-             json += "\"hNextCroquettes\":" + String(prochainCroqMin) + ",";
-             json += "\"delay\":" + String(delayDistributionCroquettesSec / 60) + ",";
-             json += "\"mass\":" + String(masseEngloutieParLeChatEnG) + ",";
-             json += "\"ration\":" + String(RATION_QUOTIDIENNE_G) + ",";
-             json += "\"sys\":" + String(1);
-             json += "}";
-             // DEBUG_PRINTLN(json);
-             server.send(200, "application/json", json); });
+             JsonDocument doc;
+             doc["nbCroquettes"] = compteurDeCroquettes;
+             doc["nbCroquinettes"] = compteurDeCroquinettes;
+             doc["hCroquettes"] = myRTC.formatDuration(dernieresCroquettes);
+             doc["hCroquinettes"] = myRTC.formatDuration(dernieresCroquinettes);
+             doc["hNextCroquettes"] = myRTC.formatDuration(prochainCroq);
+             doc["delay"] = myRTC.formatDuration(delayDistributionCroquettesSec);
+             doc["mass"] = masseEngloutieParLeChatEnG;
+             doc["ration"] = RATION_QUOTIDIENNE_G;
+             doc["autoMiam"] = autoMiamActivated;
+
+             // Formatage des heures pour les inputs (ex: "07:30")
+             char timeBuf[6];
+             sprintf(timeBuf, "%02d:%02d", heureDebutMiam, minuteDebutMiam);
+             doc["timeStart"] = String(timeBuf);
+             sprintf(timeBuf, "%02d:%02d", heureFinMiam, minuteFinMiam);
+             doc["timeEnd"] = String(timeBuf);
+
+             String output;
+             serializeJson(doc, output);
+             // DEBUG_PRINTLN(output);
+             server.send(200, "application/json", output); });
 
   //  API de commandes (Input depuis l'UI)
-  wifi.on("/setSys", [](WebServerType &server)
+  wifi.on("/setAutomiam", [](WebServerType &server)
           {
-            DEBUG_PRINTLN("[Web] Nouvelle requête : /setSys");
-        int val = server.arg("v").toInt();
-        // Désactiver les distribution
-        server.send(200, "text/plain", "OK"); });
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /setAutomiam");
+            // Désactiver les distribution
+            int val = server.arg("v").toInt();
+            setAutoMiam(val);
+            server.send(200, "text/plain", "OK"); });
   wifi.on("/feedCat", [](WebServerType &server)
           {
             DEBUG_PRINTLN("[Web] Nouvelle requête : /feedCat");
@@ -729,6 +698,21 @@ void setupWebRoutes()
             DEBUG_PRINTLN("[Web] Nouvelle requête : /reset");
           reinitialiserCompteurs();
           server.send(200, "text/plain", "OK"); });
+  // Nouvelle route : Réglage des horaires
+  wifi.on("/setMiamTime", [](WebServerType &server)
+          {
+            DEBUG_PRINTLN("[Web] Nouvelle requête : /setMiamTime");
+    String type = server.arg("type"); // "start" ou "end"
+    String val = server.arg("val");   // Format "HH:MM"
+    
+    if (val.length() == 5) {
+        int h = val.substring(0, 2).toInt();
+        int m = val.substring(3, 5).toInt();
+        setMiamTime(h, m, type);
+        server.send(200, "text/plain", "OK");
+    } else {
+        server.send(400, "text/plain", "Format invalide");
+    } });
 
   // Scan des réseaux
   wifi.on("/scan", [](WebServerType &server)
